@@ -133,7 +133,7 @@ async def send_welcome_email(recipient_email, username):
         return
 
     subject = "Welcome to Ally, your AI Meeting Wizard!"
-    app_url = "http://127.0.0.1:5501/index.html"
+    app_url = "https://ally-frontend-vw00.onrender.com/"
     html_content = config.welcome_template.replace("[USER_NAME]", html.escape(username))
     html_content = html_content.replace("[MY_URL]", app_url)
     html_content = html_content.replace("[CURRENT_YEAR]", str(datetime.now().year))
