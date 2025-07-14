@@ -1,6 +1,6 @@
 
 # This file handles all my setup and configuration for the app.
-import os
+import os, json
 from dotenv import load_dotenv
 import google.generativeai as genai
 import firebase_admin
@@ -23,8 +23,8 @@ def setup_firebase():
     global db
     try:
         if not firebase_admin._apps:
-            
-            cred = credentials.Certificate("firebase-service-account.json")
+            cred_data = json.loads(os.environ["FIREBASE_CREDENTIALS_JSON"])
+            cred = credentials.Certificate(cred_data)
             firebase_admin.initialize_app(cred, {
                 'projectId': os.getenv("FIREBASE_PROJECT_ID", "alliance-2025"),
             })
