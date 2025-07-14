@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Success</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      body {
+        font-family: "Inter", sans-serif;
+      }
+    </style>
+  </head>
+  <body class="bg-slate-50 flex items-center justify-center h-screen">
+    <div
+      class="text-center bg-white p-8 md:p-12 rounded-2xl shadow-xl max-w-md mx-4"
+    >
+      <div
+        class="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-green-100 mb-6"
+      >
+        <svg
+          class="h-10 w-10 text-green-600"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke-width="1.5"
+          stroke="currentColor"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M4.5 12.75l6 6 9-13.5"
+          />
+        </svg>
+      </div>
+      <h1 class="text-3xl font-bold text-slate-800 mb-3">Success!</h1>
+      <p class="text-slate-600 text-lg">
+        The task status has been updated successfully.
+      </p>
+      <p class="text-slate-500 mt-4 text-base">
+        You can now safely close this window.
+      </p>
+    </div>
+  </body>
+</html>
+<script>
+  // Automatically close the window after 5 seconds
+  setTimeout(() => {
+    window.close();
+  }, 5000);
+</script>
+<script>
+  // Ensure the window is closed if the user tries to navigate away
+  window.onbeforeunload = function () {
+    return "Are you sure you want to close this window?";
+  };
+</script>

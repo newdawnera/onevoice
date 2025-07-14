@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ally</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles/index.css" />
+  </head>
+
+  <body
+    class="bg-gray-900 text-white min-h-screen flex flex-col items-center justify-center"
+  >
+    <div id="vanta-canvas"></div>
+
+    <main class="flex flex-col items-center justify-center text-center p-4 m-4">
+      <h1 class="text-4xl md:text-6xl font-bold">Ally</h1>
+      <p id="welcome-message" class="md:text-xl text-slate-300 mt-4 max-w-2xl">
+        Effortlessly transform your meeting recordings and notes into summaries,
+        action items, and insights.
+      </p>
+
+      <div class="mt-16 mb-4">
+        <a
+          href="login.html"
+          id="get-started-btn"
+          class="bg-indigo-600 text-white font-bold py-4 px-10 rounded-lg md:text-xl shadow-lg hover:bg-indigo-700 transition-transform transform hover:scale-105"
+        >
+          Get Started
+        </a>
+      </div>
+    </main>
+
+    <footer class="text-center text-slate-400 py-8 absolute bottom-0 w-full">
+      <p class="text-xs">&copy; 2025 Ally. All rights reserved.</p>
+      <p class="text-xs mt-1">
+        Made with ❤️ by the Alliance International Team
+      </p>
+    </footer>
+
+    <!-- Vanta.js Animation Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vanta@latest/dist/vanta.halo.min.js"></script>
+    <script src="scripts/index.js"></script>
+  </body>
+</html>

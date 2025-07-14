@@ -1,0 +1,354 @@
+body {
+  font-family: "Inter", sans-serif;
+  background-color: #f8fafc;
+}
+
+#mobile-menu {
+  transition: transform 0.3s ease-in-out;
+}
+
+.page {
+  display: none;
+}
+.page.active {
+  display: block;
+}
+
+.step-indicator.active {
+  background-color: #4f46e5;
+  border-color: #4f46e5;
+  color: white;
+}
+.step-indicator.completed {
+  background-color: #16a34a;
+  color: white;
+  border-color: #16a34a;
+}
+
+#input-editor-container-wrapper,
+#result-editor-wrapper {
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  background-color: #fff;
+  position: relative;
+}
+.ql-toolbar {
+  border-top-left-radius: 0.5rem;
+  border-top-right-radius: 0.5rem;
+  background-color: #f3f4f6;
+}
+.ql-container {
+  border-bottom-left-radius: 0.5rem;
+  border-bottom-right-radius: 0.5rem;
+}
+#input-editor-container,
+#editor-container {
+  height: 350px;
+  display: flex;
+  flex-direction: column;
+}
+.ql-editor {
+  font-family: "Inter", sans-serif;
+  flex-grow: 1;
+  overflow-y: auto;
+}
+.ql-snow .ql-tooltip {
+  z-index: 100;
+}
+
+.ql-editor .resizable-image-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.ql-editor .resizable-image-wrapper.selected {
+  outline: 2px dashed #3b82f6;
+  outline-offset: 2px;
+}
+
+.ql-editor .resizable-image-wrapper img {
+  display: block;
+  user-select: none;
+}
+
+.ql-editor .resize-handle {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  background-color: #3b82f6;
+  border: 2px solid white;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  z-index: 10;
+  display: none;
+}
+
+.ql-editor .resizable-image-wrapper.selected .resize-handle {
+  display: block;
+}
+
+.ql-editor .resize-handle.br {
+  bottom: -6px;
+  right: -6px;
+  cursor: nwse-resize;
+}
+.ql-editor .resize-handle.bl {
+  bottom: -6px;
+  left: -6px;
+  cursor: nesw-resize;
+}
+.ql-editor .resize-handle.tr {
+  top: -6px;
+  right: -6px;
+  cursor: nesw-resize;
+}
+.ql-editor .resize-handle.tl {
+  top: -6px;
+  left: -6px;
+  cursor: nwse-resize;
+}
+
+.suggestion-box {
+  display: none;
+  position: absolute;
+  background-color: white;
+  border: 1px solid #d1d5db;
+  border-radius: 0.375rem;
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  z-index: 1000;
+  min-width: 200px;
+  max-width: 350px;
+  max-height: 250px;
+  overflow-y: auto;
+}
+.suggestion-item {
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+.suggestion-item:last-child {
+  border-bottom: none;
+}
+.suggestion-item:hover,
+.suggestion-item.active {
+  background-color: #f3f4f6;
+  color: #1e293b;
+}
+
+.ql-font-arial {
+  font-family: "Arial", sans-serif;
+}
+.ql-font-times {
+  font-family: "Times New Roman", Times, serif;
+}
+.ql-font-courier {
+  font-family: "Courier New", Courier, monospace;
+}
+.ql-font-georgia {
+  font-family: "Georgia", serif;
+}
+.ql-font-verdana {
+  font-family: "Verdana", Geneva, sans-serif;
+}
+.ql-font-tahoma {
+  font-family: "Tahoma", Geneva, sans-serif;
+}
+.ql-font-comic {
+  font-family: "Comic Sans MS", cursive, sans-serif;
+}
+.ql-font-lucida {
+  font-family: "Lucida Console", Monaco, monospace;
+}
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value="inter"]::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="inter"]::before {
+  content: "Inter";
+}
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value="arial"]::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="arial"]::before {
+  content: "Arial";
+}
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value="times"]::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="times"]::before {
+  content: "Times New Roman";
+}
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value="courier"]::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="courier"]::before {
+  content: "Courier New";
+}
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value="georgia"]::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="georgia"]::before {
+  content: "Georgia";
+}
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value="verdana"]::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="verdana"]::before {
+  content: "Verdana";
+}
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value="tahoma"]::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="tahoma"]::before {
+  content: "Tahoma";
+}
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value="comic"]::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="comic"]::before {
+  content: "Comic Sans MS";
+}
+.ql-snow .ql-picker.ql-font .ql-picker-label[data-value="lucida"]::before,
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="lucida"]::before {
+  content: "Lucida Console";
+}
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="inter"] {
+  font-family: "Inter", sans-serif;
+}
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="arial"] {
+  font-family: "Arial", sans-serif;
+}
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="times"] {
+  font-family: "Times New Roman", serif;
+}
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="courier"] {
+  font-family: "Courier New", monospace;
+}
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="georgia"] {
+  font-family: "Georgia", serif;
+}
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="verdana"] {
+  font-family: "Verdana", sans-serif;
+}
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="tahoma"] {
+  font-family: "Tahoma", sans-serif;
+}
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="comic"] {
+  font-family: "Comic Sans MS", cursive;
+}
+.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="lucida"] {
+  font-family: "Lucida Console", Monaco, monospace;
+}
+.ql-snow .ql-picker.ql-font {
+  width: 10.5em;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0.2;
+  }
+}
+.blinking {
+  animation: blink 1.5s linear infinite;
+}
+
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.3s ease, visibility 0.3s ease;
+}
+.modal-overlay.visible {
+  opacity: 1;
+  visibility: visible;
+}
+.modal-content {
+  background: white;
+  padding: 2rem;
+  border-radius: 0.75rem;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1),
+    0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  width: 90%;
+  max-width: 600px;
+  transform: scale(0.95);
+  transition: transform 0.3s ease;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+.modal-overlay.visible .modal-content {
+  transform: scale(1);
+}
+#email-quill-editor {
+  min-height: 200px;
+  max-height: 40vh;
+  overflow-y: auto;
+  background-color: #fff;
+}
+
+#pdf-loader {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.6);
+  z-index: 9999;
+  justify-content: center;
+  align-items: center;
+  flex-direction: column;
+  gap: 1rem;
+}
+.spinner {
+  border: 8px solid #f3f3f3;
+  border-top: 8px solid #4f46e5;
+  border-radius: 50%;
+  width: 60px;
+  height: 60px;
+  animation: spin 1s linear infinite;
+}
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.ql-transcribing-loader {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  background-color: #f9fafb;
+  border-radius: 0.5rem;
+  font-style: italic;
+  color: #4b5563;
+  margin: 0.5rem 0;
+}
+.ql-transcribing-loader .spinner {
+  width: 1.25rem;
+  height: 1.25rem;
+  border: 3px solid #a5b4fc;
+  border-top-color: #4f46e5;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.file-preview-badge {
+  display: inline-flex;
+  align-items: center;
+  background-color: #e2e8f0;
+  border-radius: 9999px;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  margin-right: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.file-preview-badge button {
+  margin-left: 0.5rem;
+  color: #718096;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

@@ -1,0 +1,13 @@
+
+fastapi[all]
+uvicorn
+python-dotenv
+google-generativeai
+faster-whisper @ git+https://github.com/SYSTRAN/faster-whisper.git
+torch
+transformers
+pypdf
+python-docx
+beautifulsoup4
+httpx
+firebase-admin

@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Login - Ally</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles/login.css" />
+  </head>
+  <body class="text-slate-100">
+    <div
+      id="success-message"
+      class="hidden fixed top-5 right-5 bg-green-600 text-white py-3 px-6 rounded-lg shadow-xl z-50 transition-opacity duration-300"
+    ></div>
+
+    <div class="min-h-screen flex flex-col items-center justify-center p-4">
+      <div class="w-full max-w-md">
+        <div class="text-center mb-8 mt-4">
+          <h1 class="text-4xl font-bold text-white">Welcome Back</h1>
+          <p class="text-slate-300 mt-2">Sign in to continue to Ally</p>
+        </div>
+
+        <div
+          class="bg-gray-800 border border-gray-700 rounded-xl shadow-2xl p-8"
+        >
+          <div id="error-message"></div>
+
+          <form id="login-form">
+            <div class="space-y-6">
+              <div>
+                <label
+                  for="email"
+                  class="block text-sm font-medium text-slate-300 mb-2"
+                  >Email Address</label
+                >
+                <input
+                  type="email"
+                  id="email"
+                  name="email"
+                  class="w-full bg-gray-700 border-gray-600 rounded-lg text-white placeholder-slate-400 focus:ring-indigo-500 focus:border-indigo-500 pl-2 text-sm border-2 p-2"
+                  placeholder="enter your email address"
+                  required
+                />
+              </div>
+              <div>
+                <label
+                  for="password"
+                  class="block text-sm font-medium text-slate-300 mb-2"
+                  >Password</label
+                >
+                <input
+                  type="password"
+                  id="password"
+                  name="password"
+                  class="w-full bg-gray-700 border-gray-600 rounded-lg text-white placeholder-slate-400 focus:ring-indigo-500 focus:border-indigo-500 pl-2 text-sm border-2 p-2"
+                  placeholder="••••••••"
+                  required
+                />
+              </div>
+            </div>
+
+            <div class="flex items-center justify-between mt-6">
+              <div class="flex items-center">
+                <input
+                  id="remember-me"
+                  name="remember-me"
+                  type="checkbox"
+                  class="h-4 w-4 bg-gray-600 border-gray-500 text-indigo-600 focus:ring-indigo-500 rounded"
+                />
+                <label
+                  for="remember-me"
+                  class="ml-2 block text-sm text-slate-300"
+                  >Remember me</label
+                >
+              </div>
+              <div class="text-sm pl-4">
+                <a
+                  href="#"
+                  id="forgot-password-link"
+                  class="font-medium text-indigo-400 hover:text-indigo-300"
+                  >Forgot your password?</a
+                >
+              </div>
+            </div>
+
+            <div class="mt-8">
+              <button
+                type="submit"
+                id="login-button"
+                class="w-full flex justify-center bg-indigo-600 text-white font-bold py-3 px-4 rounded-lg shadow-lg hover:bg-indigo-700 transition-colors disabled:bg-indigo-400 disabled:cursor-not-allowed"
+              >
+                Sign In
+              </button>
+            </div>
+          </form>
+
+          <div class="mt-6 text-center">
+            <p class="text-sm text-slate-400">
+              Not a member?
+              <a
+                href="signup.html"
+                class="font-medium text-indigo-400 hover:text-indigo-300"
+                >Sign up</a
+              >
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div
+      id="reset-modal"
+      class="modal-overlay fixed inset-0 z-50 items-center justify-center bg-black bg-opacity-60 hidden"
+    >
+      <div
+        class="modal-content bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-sm m-4 transform scale-95"
+      >
+        <h2 id="reset-modal-title" class="text-xl font-bold mb-4 text-white">
+          Reset Password
+        </h2>
+        <p id="reset-modal-message" class="text-slate-300 mb-4">
+          Please enter your email address to receive a password reset link.
+        </p>
+        <input
+          type="email"
+          id="reset-email-input"
+          class="w-full bg-gray-700 border-gray-600 rounded-lg text-white placeholder-slate-400 focus:ring-indigo-500 focus:border-indigo-500 p-2"
+          placeholder="your-email@example.com"
+        />
+        <div
+          id="reset-error-message"
+          class="text-red-400 text-sm mt-2 hidden"
+        ></div>
+        <div class="flex justify-end gap-3 mt-6">
+          <button
+            id="cancel-reset-btn"
+            class="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-500"
+          >
+            Cancel
+          </button>
+          <button
+            id="send-reset-btn"
+            class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700"
+          >
+            Send Link
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="scripts/login.js"></script>
+  </body>
+</html>
