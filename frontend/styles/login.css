@@ -1,0 +1,28 @@
+body {
+  font-family: "Inter", sans-serif;
+  background: #111827;
+}
+
+#error-message {
+  display: none;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  border-radius: 0.5rem;
+  background-color: #4f1a1a;
+  color: #f8b4b4;
+  border: 1px solid #ef4444;
+}
+#success-message {
+  padding: 1rem;
+  margin-bottom: 1rem;
+  border-radius: 0.5rem;
+  background-color: #065f46;
+  color: #d1fae5;
+  border: 1px solid #10b981;
+}
+.modal-overlay {
+  transition: opacity 0.3s ease;
+}
+.modal-content {
+  transition: transform 0.3s ease;
+}

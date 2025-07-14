@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin="" />
+    <link
+      rel="stylesheet"
+      as="style"
+      onload="this.rel='stylesheet'"
+      href="https://fonts.googleapis.com/css2?display=swap&amp;family=Inter%3Awght%40400%3B500%3B700%3B900&amp;family=Noto+Sans%3Awght%40400%3B500%3B700%3B900"
+    />
+    <title>About - Ally</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <style>
+      body {
+        font-family: "Inter", sans-serif;
+      }
+      #mobile-menu {
+        transition: transform 0.3s ease-in-out;
+      }
+      main::-webkit-scrollbar {
+        width: 6px;
+      }
+      main::-webkit-scrollbar-track {
+        background: #f1f5f9;
+      }
+      main::-webkit-scrollbar-thumb {
+        background: #94a3b8;
+        border-radius: 3px;
+      }
+      main::-webkit-scrollbar-thumb:hover {
+        background: #64748b;
+      }
+    </style>
+  </head>
+  <body class="bg-slate-50 text-slate-800">
+    <div class="flex h-screen overflow-hidden">
+      <!-- Sidebar -->
+      <aside
+        id="mobile-menu"
+        class="fixed lg:relative inset-y-0 left-0 transform -translate-x-full lg:translate-x-0 z-30 lg:z-auto w-72 lg:w-80 bg-slate-50 border-r border-slate-200 flex flex-col h-full min-h-screen lg:min-h-0"
+      >
+        <div class="flex h-full flex-col justify-between p-4">
+          <div class="flex flex-col gap-4">
+            <h1
+              id="welcome-message"
+              class="ml-4 text-[#0d141c] text-base font-medium block"
+            ></h1>
+            <div id="sidebar-nav" class="flex flex-col gap-2 mt-8 lg:mt-0">
+              <a
+                href="/home.html"
+                class="nav-link flex items-center gap-3 px-3 py-2"
+                ><div class="text-[#0d141c]">
+                  <img
+                    src="/img/home.png"
+                    alt="icon"
+                    width="24"
+                    height="24"
+                    style="object-fit: contain"
+                  />
+                </div>
+                <p class="text-[#0d141c] text-sm leading-normal">Home</p></a
+              >
+              <a
+                href="/action.html"
+                class="nav-link flex items-center gap-3 px-3 py-2"
+                ><div class="text-[#0d141c]">
+                  <img
+                    src="/img/action.png"
+                    alt="icon"
+                    width="24"
+                    height="24"
+                    style="object-fit: contain"
+                  />
+                </div>
+                <p class="text-[#0d141c] text-sm leading-normal">
+                  Action Items
+                </p></a
+              >
+              <a
+                href="/history.html"
+                class="nav-link flex items-center gap-3 px-3 py-2"
+                ><div class="text-[#0d141c]">
+                  <img
+                    src="/img/history.png"
+                    alt="icon"
+                    width="24"
+                    height="24"
+                    style="object-fit: contain"
+                  />
+                </div>
+                <p class="text-[#0d141c] text-sm leading-normal">History</p></a
+              >
+              <a
+                href="#"
+                class="nav-link flex items-center gap-3 px-3 py-2 rounded-lg bg-[#e7edf4]"
+                ><div class="text-[#0d141c]">
+                  <img
+                    src="/img/about.png"
+                    alt="icon"
+                    width="24"
+                    height="24"
+                    style="object-fit: contain"
+                  />
+                </div>
+                <p class="text-[#0d141c] text-sm font-medium leading-normal">
+                  About
+                </p></a
+              >
+            </div>
+          </div>
+          <div class="flex flex-col gap-2">
+            <a
+              href="index.html"
+              id="logout-btn"
+              class="nav-link flex items-center gap-3 px-3 py-2"
+            >
+              <div class="text-[#0d141c]">
+                <img
+                  src="/img/logout.png"
+                  alt="icon"
+                  width="24"
+                  height="24"
+                  style="object-fit: contain"
+                />
+              </div>
+              <p class="text-[#0d141c] text-sm leading-normal">Logout</p>
+            </a>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Overlay for mobile -->
+      <div
+        id="overlay"
+        class="fixed inset-0 bg-black bg-opacity-50 z-20 hidden lg:hidden"
+      ></div>
+
+      <!-- Main Content -->
+      <div class="flex-1 flex flex-col overflow-hidden">
+        <!-- Mobile Header -->
+        <header
+          class="lg:hidden flex items-center justify-between p-4 bg-slate-100 border-b border-slate-200 sticky top-0 z-10"
+        >
+          <button id="menu-button" class="p-2">
+            <img
+              src="/img/list.png"
+              alt="icon"
+              width="24"
+              height="24"
+              style="object-fit: contain"
+            />
+          </button>
+          <h1 class="text-[#0d141c] text-lg font-bold">About Us</h1>
+          <div class="w-6"></div>
+          <!-- Spacer -->
+        </header>
+
+        <main
+          class="flex-1 overflow-x-hidden overflow-y-auto p-4 md:p-6 lg:p-8"
+        >
+          <div class="max-w-4xl mx-auto">
+            <div class="text-center">
+              <h1 class="md:text-4xl text-2xl font-bold text-gray-800">
+                About Ally - AI Meeting Wizard
+              </h1>
+              <p class="mt-4 md:text-lg text-gray-600">
+                Your intelligent partner for productive meetings.
+              </p>
+            </div>
+
+            <div class="mt-12 bg-white p-8 rounded-lg shadow-lg">
+              <h2 class="md:text-2xl text-lg font-bold text-gray-800 mb-4">
+                Our Mission
+              </h2>
+              <p
+                class="text-sm md:text-base text-justify text-gray-700 leading-relaxed"
+              >
+                At Ally, we're dedicated to transforming how teams collaborate.
+                We believe that meetings should be a catalyst for progress, not
+                a drain on time and energy. Our mission is to provide powerful,
+                intuitive tools that handle the administrative burdens of
+                meetings—like transcription, summarization, and action item
+                tracking—so you and your team can focus on what truly matters:
+                innovation and decision-making. By leveraging the power of
+                artificial intelligence, we make every meeting more efficient,
+                actionable, and valuable.
+              </p>
+            </div>
+
+            <div class="mt-12 bg-white p-8 rounded-lg shadow-lg">
+              <h2 class="md:text-2xl text-lg font-bold text-gray-800 mb-6">
+                How to Use This Thing
+              </h2>
+              <div class="space-y-6 text-gray-700 leading-relaxed">
+                <p class="text-sm md:text-base text-justify">
+                  Hey there! Getting started with the wizard is pretty
+                  straightforward. I have provided a brief explanation below for
+                  you.
+                </p>
+                <div>
+                  <h3 class="md:text-xl font-semibold mb-2 text-gray-800">
+                    Step 1: Give It Something to Work With
+                  </h3>
+                  <p class="text-sm md:text-base text-justify">
+                    First, you need to give the AI some text from your meeting.
+                    Head over to the
+                    <a href="/home.html" class="text-indigo-600 hover:underline"
+                      >Home</a
+                    >
+                    page. You've got a few options:
+                  </p>
+                  <ul
+                    class="list-disc list-inside mt-2 space-y-1 pl-4 text-sm md:text-base text-justify"
+                  >
+                    <li>
+                      <strong>Upload a file:</strong> Got a pdf, txt, docx, an
+                      audio or video recording? Just drag it into the box or
+                      click to upload.
+                    </li>
+                    <li>
+                      <strong>Record audio:</strong> You can either dictate live
+                      into the text box with your microphone or record your
+                      screen and system audio directly (useful for online
+                      meetings).
+                    </li>
+                    <li>
+                      <strong>Paste text:</strong> If you already have notes,
+                      just copy and paste them into the big text editor on the
+                      right. Remember, the more context you provide, the better
+                      the AI can summarize!
+                      <br />
+                      You can ask Ally questions about the text you pasted in,
+                      or the file you uploaded, by clicking on the "Ask Ally
+                      about the Transcript" button below the text editor.
+                    </li>
+                  </ul>
+                  <p class="mt-2">
+                    Once your text is in there, hit the big "Process Content"
+                    button.
+                  </p>
+                </div>
+
+                <div>
+                  <h3 class="md:text-xl font-semibold mb-2 text-gray-800">
+                    Step 2: Get Your Summary
+                  </h3>
+                  <p class="text-sm md:text-base text-justify">
+                    The app will take you to a new page where you can choose a
+                    role or a language if you want a specific kind of summary.
+                    Most of the time, you can just leave this as is and click
+                    "Get Result." The AI will get you a summary and a list of
+                    action items for you. You can click back to regenerate
+                    another summary if you want to try a different approach, its
+                    up to you. You can also ask Ally questions about the summary
+                    by typing in the input box at the bottom of the page.
+                  </p>
+                </div>
+
+                <div>
+                  <h3 class="md:text-xl font-semibold mb-2 text-gray-800">
+                    Step 3: Check Out the Results
+                  </h3>
+                  <p class="text-sm md:text-base text-justify">
+                    After processing, you can find everything neatly organized:
+                  </p>
+                  <ul
+                    class="list-disc list-inside mt-2 space-y-1 pl-4 text-sm md:text-base text-justify"
+                  >
+                    <li>
+                      <strong>Action Items:</strong> Click on Manage Action logs
+                      button or "Action Items" in the sidebar. This is where
+                      you'll see a to-do list pulled from your meeting. You can
+                      edit tasks, assign them to people, and track their status.
+                    </li>
+                    <li>
+                      <strong>History:</strong> The "History" page saves all
+                      your past meetings—transcripts, summaries, and all. So you
+                      can always go back and find what you need.
+                    </li>
+                  </ul>
+                  <p class="mt-2 text-sm md:text-base text-justify">
+                    And that's pretty much it! Just feed it your meeting info,
+                    and let the wizard do the heavy lifting.
+                  </p>
+                  <p class="mt-2 text-sm md:text-base text-justify">
+                    Just a quick note, you can also get summary of other
+                    documents not just meeting transcripts.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-12">
+              <h2
+                class="md:text-3xl text-2xl font-bold text-center text-gray-800 mb-8"
+              >
+                Meet the Team
+              </h2>
+              <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-8">
+                <!-- Team Member 1 -->
+                <div class="bg-white rounded-lg shadow-lg p-6 text-center">
+                  <img
+                    class="w-32 h-32 rounded-full mx-auto mb-4"
+                    src="/img/clean1.png"
+                    alt="Team Member 1"
+                  />
+                  <h3 class="text-xl font-bold text-gray-800">Lucky Daniel</h3>
+                  <p class="text-gray-500">Lead Developer</p>
+                  <p class="mt-2 text-sm text-gray-600 text-center">
+                    Daniel is the founder and developer of Ally. A project he
+                    undertook during his Master's degree.
+                  </p>
+                </div>
+                <!-- Team Member 2 -->
+                <div class="bg-white rounded-lg shadow-lg p-6 text-center">
+                  <img
+                    class="w-32 h-32 rounded-full mx-auto mb-4"
+                    src="/img/bp.jpg"
+                    alt="Team Member 2"
+                  />
+                  <h3 class="text-xl font-bold text-gray-800">
+                    Dr. Brian Pluss
+                  </h3>
+                  <p class="text-gray-500">Supervisor</p>
+                  <p class="mt-2 text-sm text-gray-600 text-center">
+                    Dr. Brian’s expertise and mentorship have been instrumental
+                    in driving the project forward. His thoughtful guidance
+                    greatly contributed to our achievements.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <script type="module">
+      import { initializeApp } from "./scripts/appLogic.js";
+      initializeApp();
+    </script>
+  </body>
+</html>

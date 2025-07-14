@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Home - Ally</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+    <script src="https://unpkg.com/html-docx-js/dist/html-docx.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+
+    <link
+      href="https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.snow.css"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.js"></script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="/styles/home.css" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body class="bg-slate-50 text-slate-800">
+    <div id="pdf-loader">
+      <div class="spinner"></div>
+      <p class="text-white font-medium text-lg">
+        Generating High-Quality PDF...
+      </p>
+    </div>
+
+    <div class="flex h-screen overflow-hidden">
+      <aside
+        id="mobile-menu"
+        class="fixed lg:relative inset-y-0 left-0 transform -translate-x-full lg:translate-x-0 z-30 lg:z-auto w-72 lg:w-80 bg-slate-50 border-r border-slate-200 flex flex-col h-full min-h-screen lg:min-h-0"
+      >
+        <div class="flex h-full flex-col justify-between p-4">
+          <div class="flex flex-col gap-4">
+            <h1
+              id="welcome-message"
+              class="ml-4 text-[#0d141c] text-base font-medium block"
+            ></h1>
+            <div id="sidebar-nav" class="flex flex-col gap-2 mt-8 lg:mt-0">
+              <a
+                href="#"
+                class="nav-link flex items-center gap-3 px-3 py-2 rounded-lg bg-[#e7edf4]"
+                ><div class="text-[#0d141c]">
+                  <img
+                    src="/img/home.png"
+                    alt="icon"
+                    width="24"
+                    height="24"
+                    style="object-fit: contain"
+                  />
+                </div>
+                <p class="text-[#0d141c] text-sm font-medium leading-normal">
+                  Home
+                </p></a
+              >
+
+              <a
+                href="/action.html"
+                class="nav-link flex items-center gap-3 px-3 py-2"
+                ><div class="text-[#0d141c]">
+                  <img
+                    src="/img/action.png"
+                    alt="icon"
+                    width="24"
+                    height="24"
+                    style="object-fit: contain"
+                  />
+                </div>
+                <p class="text-[#0d141c] text-sm leading-normal">
+                  Action Items
+                </p></a
+              >
+              <a
+                href="/history.html"
+                class="nav-link flex items-center gap-3 px-3 py-2"
+                ><div class="text-[#0d141c]">
+                  <img
+                    src="/img/history.png"
+                    alt="icon"
+                    width="24"
+                    height="24"
+                    style="object-fit: contain"
+                  />
+                </div>
+                <p class="text-[#0d141c] text-sm leading-normal">History</p></a
+              >
+              <a
+                href="/about.html"
+                class="nav-link flex items-center gap-3 px-3 py-2"
+                ><div class="text-[#0d141c]">
+                  <img
+                    src="/img/about.png"
+                    alt="icon"
+                    width="24"
+                    height="24"
+                    style="object-fit: contain"
+                  />
+                </div>
+                <p class="text-[#0d141c] text-sm leading-normal">About</p></a
+              >
+            </div>
+          </div>
+          <div class="flex flex-col gap-2">
+            <a
+              href="index.html"
+              id="logout-btn"
+              class="nav-link flex items-center gap-3 px-3 py-2"
+            >
+              <div class="text-[#0d141c]">
+                <img
+                  src="/img/logout.png"
+                  alt="icon"
+                  width="24"
+                  height="24"
+                  style="object-fit: contain"
+                />
+              </div>
+              <p class="text-[#0d141c] text-sm leading-normal">Logout</p>
+            </a>
+          </div>
+        </div>
+      </aside>
+      <div
+        id="overlay"
+        class="fixed inset-0 bg-black bg-opacity-50 z-20 hidden lg:hidden"
+      ></div>
+
+      <div class="flex-1 flex flex-col overflow-hidden">
+        <header
+          class="lg:hidden flex items-center justify-between p-4 bg-slate-100 border-b border-slate-200"
+        >
+          <button id="menu-button" class="p-2">
+            <img
+              src="/img/list.png"
+              alt="icon"
+              width="24"
+              height="24"
+              style="object-fit: contain"
+            />
+          </button>
+          <h1 class="text-xl font-semibold">AI Meeting Wizard</h1>
+          <div class="w-6"></div>
+        </header>
+        <main class="flex-1 overflow-y-auto p-4">
+          <header class="text-center mb-8 hidden lg:block">
+            <h1 class="text-4xl md:text-5xl font-bold text-slate-800">
+              AI Meeting Wizard
+            </h1>
+            <p class="text-slate-600 mt-2">
+              Transform your meetings into actionable insights.
+            </p>
+          </header>
+
+          <div
+            class="w-full max-w-7xl mx-auto bg-white rounded-xl shadow-2xl overflow-hidden border border-slate-200"
+          >
+            <div class="p-4 sm:p-6 md:p-8">
+              <div
+                id="step-navigation"
+                class="flex items-center justify-center mb-8 space-x-2 md:space-x-4"
+              >
+                <div
+                  class="step-indicator flex items-center justify-center w-8 h-8 md:w-10 md:h-10 rounded-full border-2 border-slate-300 font-bold text-slate-500"
+                  data-step="1"
+                >
+                  1
+                </div>
+                <div class="flex-1 h-1 bg-slate-200 rounded-full"></div>
+                <div
+                  class="step-indicator flex items-center justify-center w-8 h-8 md:w-10 md:h-10 rounded-full border-2 border-slate-300 font-bold text-slate-500"
+                  data-step="2"
+                >
+                  2
+                </div>
+                <div class="flex-1 h-1 bg-slate-200 rounded-full"></div>
+                <div
+                  class="step-indicator flex items-center justify-center w-8 h-8 md:w-10 md:h-10 rounded-full border-2 border-slate-300 font-bold text-slate-500"
+                  data-step="3"
+                >
+                  3
+                </div>
+              </div>
+
+              <div id="alert-container" class="my-4"></div>
+
+              <div id="page-1" class="page">
+                <h2 class="text-xl sm:text-2xl font-bold mb-1 text-center">
+                  Provide Content
+                </h2>
+                <p class="text-slate-500 mb-6 text-center text-sm sm:text-base">
+                  Upload, paste, or record your text below.
+                </p>
+
+                <div class="mb-6 max-w-md mx-auto">
+                  <label
+                    for="unified-language-select"
+                    class="block text-sm font-medium text-slate-700 mb-2 text-center"
+                    >Transcription Language</label
+                  >
+                  <select
+                    id="unified-language-select"
+                    class="w-full p-2 border border-slate-300 rounded-lg text-sm bg-white shadow-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  ></select>
+                  <p class="text-xs text-slate-500 mt-1 text-center">
+                    Select the primary language spoken in your content for the
+                    most accurate transcription.
+                  </p>
+                </div>
+
+                <div class="grid lg:grid-cols-2 gap-6 items-start">
+                  <div class="space-y-6">
+                    <div>
+                      <label
+                        for="file-upload"
+                        class="block text-sm font-medium text-slate-700 mb-2"
+                        >1. Upload File</label
+                      >
+                      <label
+                        for="file-upload"
+                        class="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-slate-300 rounded-lg cursor-pointer bg-slate-50 hover:bg-slate-100"
+                      >
+                        <div
+                          class="flex flex-col items-center justify-center pt-5 pb-6 text-center"
+                        >
+                          <img
+                            src="/img/upload.png"
+                            alt="icon"
+                            width="32"
+                            height="32"
+                            style="object-fit: contain"
+                          />
+                          <p class="mb-2 text-sm text-slate-500">
+                            <span class="font-semibold">Click to upload</span>
+                            or drag and drop
+                          </p>
+                          <p class="text-xs text-slate-500">
+                            Audio, Video, or Document
+                          </p>
+                        </div>
+                        <input id="file-upload" type="file" class="hidden" />
+                      </label>
+                      <p id="file-name" class="text-sm text-slate-500 mt-2"></p>
+                    </div>
+
+                    <div id="speech-to-text-container">
+                      <label
+                        class="block text-sm font-medium text-slate-700 mb-2"
+                        >2. Or Record Audio</label
+                      >
+                      <div class="space-y-4">
+                        <div
+                          class="flex flex-wrap items-center gap-2 p-3 border rounded-lg"
+                        >
+                          <span
+                            class="text-sm font-medium text-slate-600 flex-shrink-0"
+                            >Live Dictation:</span
+                          >
+                          <div class="flex-grow"></div>
+
+                          <button
+                            id="record-btn"
+                            class="flex-shrink-0 bg-red-600 text-white w-10 h-10 flex items-center justify-center rounded-full hover:bg-red-700 transition-colors"
+                            title="Start Live Dictation"
+                          ></button>
+                          <div
+                            id="recording-indicator"
+                            class="hidden w-4 h-4 bg-red-500 rounded-full blinking"
+                          ></div>
+                        </div>
+
+                        <div
+                          class="flex flex-wrap items-center gap-2 p-3 border rounded-lg"
+                        >
+                          <span
+                            class="text-sm font-medium text-slate-600 flex-shrink-0"
+                            >Media Record:</span
+                          >
+                          <button
+                            id="record-system-btn"
+                            class="flex-shrink-0 bg-blue-600 text-white w-10 h-10 flex items-center justify-center rounded-full hover:bg-blue-700 transition-colors"
+                            title="Record System Audio & Screen"
+                          >
+                            <img
+                              src="/img/record.png"
+                              alt="icon"
+                              width="24"
+                              height="24"
+                              style="object-fit: contain"
+                            />
+                          </button>
+                          <div
+                            id="system-recording-indicator"
+                            class="hidden w-4 h-4 bg-blue-500 rounded-full blinking"
+                          ></div>
+                          <label
+                            for="include-mic-checkbox"
+                            class="ml-2 flex items-center text-sm text-slate-600 cursor-pointer"
+                            ><input
+                              type="checkbox"
+                              id="include-mic-checkbox"
+                              class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 mr-2"
+                              checked
+                            />Include Mic</label
+                          >
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="bg-slate-100 p-4 rounded-lg border">
+                      <h3 class="font-semibold text-slate-800 mb-3">
+                        Ally Power-Ups
+                      </h3>
+                      <div class="flex items-center justify-between mb-3">
+                        <label
+                          for="autocomplete-toggle"
+                          class="text-sm font-medium text-slate-700"
+                          >Smart Auto-Completion</label
+                        >
+                        <label
+                          class="inline-flex relative items-center cursor-pointer"
+                          ><input
+                            type="checkbox"
+                            id="autocomplete-toggle"
+                            class="sr-only peer" />
+                          <div
+                            class="w-11 h-6 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"
+                          ></div
+                        ></label>
+                      </div>
+                      <button
+                        id="detect-topics-btn"
+                        class="w-full bg-sky-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-sky-600 transition-colors text-sm"
+                      >
+                        Detect & Label Topics
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2"
+                      >3. Paste, Type, or Dictate Text</label
+                    >
+                    <div id="input-editor-container-wrapper" class="relative">
+                      <div id="suggestion-box" class="suggestion-box"></div>
+                    </div>
+                    <div
+                      id="export-transcript"
+                      class="flex items-center space-x-1 mt-2 justify-end"
+                    ></div>
+
+                    <div
+                      id="transcript-qa-section"
+                      class="mt-4 pt-4 border-t border-slate-200"
+                    >
+                      <h3 class="text-base sm:text-lg font-bold mb-3">
+                        Ask Ally about the Transcript
+                      </h3>
+                      <div class="flex flex-col sm:flex-row gap-2">
+                        <input
+                          type="text"
+                          id="transcript-qa-question-input"
+                          class="flex-grow p-2 border border-slate-300 rounded-lg text-sm"
+                          placeholder="e.g., What were the action items?"
+                        />
+                        <button
+                          id="transcript-qa-ask-btn"
+                          class="bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-indigo-700 text-sm flex-shrink-0"
+                        >
+                          Ask
+                        </button>
+                      </div>
+                      <div
+                        id="transcript-qa-answer-container"
+                        class="relative mt-3 p-3 bg-slate-100 rounded-lg min-h-[40px] text-slate-700 text-sm"
+                        style="display: none"
+                      >
+                        <button
+                          id="close-transcript-qa-btn"
+                          class="absolute top-2 right-2 text-slate-400 hover:text-slate-600"
+                        >
+                          <img
+                            src="/img/cancel.png"
+                            alt="icon"
+                            width="20"
+                            height="20"
+                            style="object-fit: contain"
+                          />
+                        </button>
+                        <p
+                          id="transcript-qa-answer"
+                          class="whitespace-pre-wrap pr-6"
+                        ></p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div id="page-1-controls" class="mt-8 text-center">
+                  <div class="flex justify-center items-center gap-4">
+                    <button
+                      id="next-btn-1"
+                      class="bg-indigo-600 text-white font-bold py-2 px-5 sm:py-3 sm:px-6 rounded-lg shadow-lg hover:bg-indigo-700 disabled:bg-slate-400 text-sm sm:text-base"
+                    >
+                      Process Content
+                    </button>
+                  </div>
+                  <div
+                    id="processing-controls"
+                    class="hidden items-center justify-center mt-4"
+                  >
+                    <div class="flex items-center">
+                      <span class="text-slate-600 font-semibold mr-4"
+                        >Processing...</span
+                      >
+                      <div
+                        class="h-6 w-6 border-t-2 border-indigo-600 rounded-full animate-spin"
+                      ></div>
+                    </div>
+                    <button
+                      id="cancel-upload-btn"
+                      class="ml-6 bg-red-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-red-700"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div id="page-2" class="page">
+                <h2 class="text-xl sm:text-2xl font-bold mb-6 text-center">
+                  Configure &amp; Generate
+                </h2>
+                <div class="bg-slate-100 p-4 rounded-lg mb-6 border">
+                  <h3 class="font-semibold mb-2">Source Text:</h3>
+                  <p
+                    id="source-text-preview"
+                    class="text-sm text-slate-600 max-h-32 overflow-y-auto"
+                  ></p>
+                </div>
+                <div class="grid sm:grid-cols-2 gap-6 max-w-4xl mx-auto">
+                  <div class="bg-white p-4 rounded-lg border">
+                    <h3 class="font-bold text-lg mb-2">Select Role</h3>
+                    <p class="text-sm text-slate-500 mb-4">
+                      Tailor the summary to a specific perspective.
+                    </p>
+                    <label for="role-select" class="text-sm font-medium"
+                      >Role:</label
+                    ><select
+                      id="role-select"
+                      class="w-full mt-1 p-2 border rounded-lg text-sm"
+                    ></select
+                    ><input
+                      type="text"
+                      id="role-other-input"
+                      class="hidden w-full mt-2 p-2 border rounded-lg text-sm"
+                      placeholder="Please specify role"
+                    />
+                  </div>
+                  <div class="bg-white p-4 rounded-lg border">
+                    <h3 class="font-bold text-lg mb-2">Select Language</h3>
+                    <p class="text-sm text-slate-500 mb-4">
+                      Translate the summary into another language.
+                    </p>
+                    <label for="lang-select" class="text-sm font-medium"
+                      >Language:</label
+                    ><select
+                      id="lang-select"
+                      class="w-full mt-1 p-2 border rounded-lg text-sm"
+                    ></select
+                    ><input
+                      type="text"
+                      id="lang-other-input"
+                      class="hidden w-full mt-2 p-2 border rounded-lg text-sm"
+                      placeholder="Please specify language"
+                    />
+                  </div>
+                </div>
+                <div id="page-2-controls" class="mt-8 text-center">
+                  <button
+                    id="get-result-btn"
+                    class="bg-indigo-600 text-white font-bold py-2 px-6 sm:py-3 sm:px-8 rounded-lg shadow-lg hover:bg-indigo-700 disabled:bg-slate-400"
+                  >
+                    Get Result
+                  </button>
+                  <div
+                    id="generating-controls"
+                    class="hidden items-center justify-center"
+                  >
+                    <div class="flex items-center">
+                      <span class="text-slate-600 font-semibold mr-4"
+                        >Generating...</span
+                      >
+                      <div
+                        class="h-6 w-6 border-t-2 border-indigo-600 rounded-full animate-spin"
+                      ></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="mt-8 flex justify-center">
+                  <button
+                    id="back-btn-2"
+                    class="bg-slate-200 text-slate-700 font-bold py-2 px-6 rounded-lg text-sm"
+                  >
+                    Back
+                  </button>
+                </div>
+              </div>
+
+              <div id="page-3" class="page">
+                <div
+                  class="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-4"
+                >
+                  <h2
+                    class="text-xl sm:text-2xl font-bold text-center sm:text-left"
+                  >
+                    Review &amp; Export
+                  </h2>
+                  <div
+                    id="export-result"
+                    class="ml-2 flex items-center space-x-2 justify-center sm:justify-end"
+                  ></div>
+                </div>
+                <div id="result-editor-wrapper"></div>
+                <div class="mt-4 text-center">
+                  <a
+                    href="action.html"
+                    id="manage-action-logs-btn"
+                    class="bg-purple-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-purple-700 transition-colors inline-block text-sm"
+                    >Manage Action Logs</a
+                  >
+                </div>
+                <div
+                  id="qa-section"
+                  class="mt-8 pt-6 border-t border-slate-200"
+                >
+                  <h3 class="text-lg sm:text-xl font-bold mb-4">
+                    Ask Ally a Question
+                  </h3>
+                  <div class="flex flex-col sm:flex-row gap-2">
+                    <input
+                      type="text"
+                      id="qa-question-input"
+                      class="flex-grow p-2 border border-slate-300 rounded-lg text-sm"
+                      placeholder="e.g., What were the main decisions?"
+                    />
+                    <button
+                      id="qa-ask-btn"
+                      class="bg-indigo-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-indigo-700 text-sm flex-shrink-0"
+                    >
+                      Ask
+                    </button>
+                  </div>
+                  <div
+                    id="qa-answer-container"
+                    class="relative mt-4 p-4 bg-slate-100 rounded-lg min-h-[50px] text-slate-700"
+                    style="display: none"
+                  >
+                    <button
+                      id="close-qa-btn"
+                      class="absolute top-2 right-2 text-slate-400 hover:text-slate-600"
+                    >
+                      <img
+                        src="/img/cancel.png"
+                        alt="icon"
+                        width="20"
+                        height="20"
+                        style="object-fit: contain"
+                      />
+                    </button>
+                    <p id="qa-answer" class="whitespace-pre-wrap pr-6"></p>
+                  </div>
+                </div>
+                <div
+                  class="mt-8 flex flex-col sm:flex-row justify-between items-center gap-4"
+                >
+                  <button
+                    id="back-btn-3"
+                    class="w-full sm:w-auto bg-slate-200 text-slate-700 font-bold py-2 px-6 rounded-lg hover:bg-slate-300"
+                  >
+                    Back
+                  </button>
+                  <button
+                    id="start-over-btn"
+                    class="w-full sm:w-auto bg-indigo-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-indigo-700"
+                  >
+                    Start Over
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <footer class="text-center text-slate-500 mt-8 text-sm">
+            <p>
+              &copy; <span id="year"></span> Alliance International. All rights
+              reserved.
+            </p>
+          </footer>
+        </main>
+      </div>
+    </div>
+
+    <div id="email-modal" class="modal-overlay">
+      <div class="modal-content">
+        <h3 class="text-xl font-bold mb-6">Preview and Send Email</h3>
+        <form id="email-form">
+          <div class="space-y-4">
+            <div>
+              <label
+                for="email-recipients"
+                class="block text-sm font-medium text-slate-700 mb-1"
+                >Recipients (comma-separated):</label
+              >
+              <input
+                type="text"
+                id="email-recipients"
+                name="recipients"
+                class="w-full mt-1 p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                placeholder="user1@example.com, user2@example.com"
+                required
+              />
+            </div>
+            <div>
+              <label
+                for="email-subject"
+                class="block text-sm font-medium text-slate-700 mb-1"
+                >Subject:</label
+              >
+              <input
+                type="text"
+                id="email-subject"
+                name="subject"
+                class="w-full mt-1 p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                placeholder="Email subject"
+                required
+              />
+            </div>
+            <div>
+              <label
+                for="email-quill-editor"
+                class="block text-sm font-medium text-slate-700 mb-1"
+                >Body:
+                <small class="block mt-1" style="color: blue"
+                  >Please note that images in body of mail will appear as
+                  attachments to the recipient(s)
+                </small></label
+              >
+
+              <div id="email-quill-editor-container" class="mt-1">
+                <div id="email-quill-editor"></div>
+              </div>
+            </div>
+
+            <div class="mb-5">
+              <label
+                for="email-attachments"
+                class="block text-sm font-medium text-gray-700 mb-1"
+                >Attachments</label
+              >
+              <input
+                type="file"
+                id="email-attachments"
+                name="attachments"
+                multiple
+                accept="image/*,audio/*,.pdf,.doc,.docx,.txt"
+                class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
+              />
+              <div id="file-preview" class="mt-3"></div>
+            </div>
+          </div>
+          <div class="mt-8 flex justify-end space-x-3">
+            <button
+              id="cancel-email-btn"
+              type="button"
+              class="bg-slate-200 text-slate-700 font-bold py-2 px-4 rounded-lg hover:bg-slate-300"
+            >
+              Cancel
+            </button>
+            <button
+              id="send-email-btn"
+              type="submit"
+              class="bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg shadow-lg hover:bg-indigo-700 flex items-center"
+            >
+              <svg
+                id="email-spinner"
+                class="animate-spin -ml-1 mr-3 h-5 w-5 text-white hidden"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle
+                  class="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  stroke-width="4"
+                ></circle>
+                <path
+                  class="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                ></path>
+              </svg>
+              <span id="send-email-btn-text">Send</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <script type="module" src="/scripts/home.js"></script>
+  </body>
+</html>
