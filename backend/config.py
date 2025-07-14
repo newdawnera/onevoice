@@ -23,7 +23,7 @@ def setup_firebase():
     global db
     try:
         if not firebase_admin._apps:
-            cred_data = json.loads(os.environ["FIREBASE_CREDENTIALS_JSON"])
+            cred_data = json.loads(os.getenv("FIREBASE_CREDENTIALS_JSON"))
             cred = credentials.Certificate(cred_data)
             firebase_admin.initialize_app(cred, {
                 'projectId': os.getenv("FIREBASE_PROJECT_ID", "alliance-2025"),
