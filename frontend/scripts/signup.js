@@ -50,7 +50,8 @@ signupForm.addEventListener("submit", async (e) => {
     displaySuccessMsg("Registration successful! Redirecting...");
 
     try {
-      const backendUrl = "http://127.0.0.1:8000/api/send-welcome-email";
+      const backendUrl =
+        "https://ally-backend-y2pq.onrender.com/api/send-welcome-email";
       await fetch(backendUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

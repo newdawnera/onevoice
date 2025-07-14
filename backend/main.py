@@ -19,7 +19,7 @@ load_html_templates()
 app = FastAPI()
 
 origins = [
-    "*"  
+    "https://ally-backend-y2pq.onrender.com/"  
 ]
 
 app.add_middleware(

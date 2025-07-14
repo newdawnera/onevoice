@@ -12,7 +12,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.9.1/firebase-firestore.js";
 
 const actionPage = (user, db) => {
-  const API_BASE_URL = "http://127.0.0.1:8000";
+  const MY_API = "https://ally-backend-y2pq.onrender.com/";
   const currentUser = user;
   const actionLogsCollectionRef = collection(
     db,
@@ -375,7 +375,7 @@ const actionPage = (user, db) => {
 
       try {
         const response = await fetch(
-          `${API_BASE_URL}/api/send-manual-reminder`,
+          `${MY_API}/api/send-manual-reminder`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
