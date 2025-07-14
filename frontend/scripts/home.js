@@ -8,7 +8,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.9.1/firebase-firestore.js";
 
 const App = (() => {
-  const API_BASE_URL = "http://127.0.0.1:8000/api";
+  const MY_API = "https://ally-backend-y2pq.onrender.com/";
   let db, auth, currentUser;
 
   const state = {
@@ -125,7 +125,7 @@ const App = (() => {
   const api = {
     async _fetch(endpoint, options) {
       try {
-        const response = await fetch(`${API_BASE_URL}${endpoint}`, options);
+        const response = await fetch(`${MY_API}${endpoint}`, options);
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({
             detail: `HTTP error! Status: ${response.status}`,
