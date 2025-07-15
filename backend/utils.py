@@ -1,7 +1,7 @@
 
 # This file contains all the helper functions that do the actual work.
 import os
-import httpx
+import asyncio, httpx
 import tempfile
 import logging
 import docx
@@ -9,7 +9,7 @@ import html
 import io
 from fastapi import UploadFile, HTTPException
 from pypdf import PdfReader
-from faster_whisper import WhisperModel
+import assemblyai as aai
 from datetime import datetime
 from typing import List, Optional
 import config
@@ -48,47 +48,85 @@ async def read_text_from_file(file: UploadFile):
         raise HTTPException(status_code=500, detail=f"Failed to process file: {e}")
 
 
-async def transcribe_to_segments(file: UploadFile, language: Optional[str] = None) -> List[dict]:
-    tmp_path = None
-    try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename)[1]) as tmp:
-            tmp.write(await file.read())
-            tmp_path = tmp.name
+# async def transcribe_to_segments(file: UploadFile, language: Optional[str] = None) -> List[dict]:
+#     tmp_path = None
+#     try:
+#         with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename)[1]) as tmp:
+#             tmp.write(await file.read())
+#             tmp_path = tmp.name
 
-        model = WhisperModel("base", device="cpu", compute_type="int8")
-        lang_code = language.split('-')[0] if language else None
-        segments_generator, _ = model.transcribe(tmp_path, language=lang_code, beam_size=5)
+#         model = WhisperModel("base", device="cpu", compute_type="int8")
+#         lang_code = language.split('-')[0] if language else None
+#         segments_generator, _ = model.transcribe(tmp_path, language=lang_code, beam_size=5)
         
-        segments_list = [{"start": s.start, "end": s.end, "text": s.text} for s in segments_generator]
-        logger.info(f"Generated {len(segments_list)} segments from {file.filename}")
-        return segments_list
-    except Exception as e:
-        logger.error(f"Transcription to segments failed for {file.filename}: {e}")
-        raise HTTPException(status_code=500, detail=f"Transcription failed: {e}")
-    finally:
-        if tmp_path and os.path.exists(tmp_path):
-            os.remove(tmp_path)
+#         segments_list = [{"start": s.start, "end": s.end, "text": s.text} for s in segments_generator]
+#         logger.info(f"Generated {len(segments_list)} segments from {file.filename}")
+#         return segments_list
+#     except Exception as e:
+#         logger.error(f"Transcription to segments failed for {file.filename}: {e}")
+#         raise HTTPException(status_code=500, detail=f"Transcription failed: {e}")
+#     finally:
+#         if tmp_path and os.path.exists(tmp_path):
+#             os.remove(tmp_path)
 
-async def transcribe_audio_file_simple(file: UploadFile, language: Optional[str] = None) -> str:
-    tmp_path = None
+# async def transcribe_audio_file_simple(file: UploadFile, language: Optional[str] = None) -> str:
+#     tmp_path = None
+#     try:
+#         with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename)[1]) as tmp:
+#             tmp.write(await file.read())
+#             tmp_path = tmp.name
+        
+#         model = WhisperModel("base", device="cpu", compute_type="int8")
+#         lang_code = language.split('-')[0] if language else None
+#         segments, _ = model.transcribe(tmp_path, language=lang_code, beam_size=5)
+        
+#         transcription = " ".join([segment.text for segment in segments]).strip()
+#         logger.info(f"Simple transcription complete for {file.filename}")
+#         return transcription
+#     except Exception as e:
+#         logger.error(f"Simple transcription failed for {file.filename}: {e}")
+#         raise HTTPException(status_code=500, detail=f"Transcription failed: {e}")
+#     finally:
+#         if tmp_path and os.path.exists(tmp_path):
+#             os.remove(tmp_path)
+
+async def transcribe_with_assemblyai(file: UploadFile) -> str:
+    """
+    Transcribes an audio file using the AssemblyAI API and formats the output
+    with speaker labels if available.
+    """
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename)[1]) as tmp:
-            tmp.write(await file.read())
-            tmp_path = tmp.name
-        
-        model = WhisperModel("base", device="cpu", compute_type="int8")
-        lang_code = language.split('-')[0] if language else None
-        segments, _ = model.transcribe(tmp_path, language=lang_code, beam_size=5)
-        
-        transcription = " ".join([segment.text for segment in segments]).strip()
-        logger.info(f"Simple transcription complete for {file.filename}")
-        return transcription
+        # Configure your API key
+        aai.settings.api_key = os.getenv("ASSEMBLYAI_API_KEY")
+        if not aai.settings.api_key:
+            raise HTTPException(status_code=500, detail="AssemblyAI API key not configured.")
+
+        # Configure transcription to identify different speakers
+        config = aai.TranscriptionConfig(speaker_labels=True)
+        transcriber = aai.Transcriber()
+
+        # The SDK can directly handle the file stream from FastAPI
+        transcript = await asyncio.to_thread(transcriber.transcribe, file.file, config)
+
+        if transcript.status == aai.TranscriptStatus.error:
+            logger.error(f"AssemblyAI transcription failed: {transcript.error}")
+            raise HTTPException(status_code=500, detail=transcript.error)
+
+        # If speaker labels are detected, format the transcript by speaker.
+        if transcript.utterances:
+            formatted_transcript = "\n".join(
+                f"Speaker {utterance.speaker}: {utterance.text}"
+                for utterance in transcript.utterances
+            )
+            return formatted_transcript
+        else:
+            # Otherwise, return the plain text.
+            return transcript.text
+
     except Exception as e:
-        logger.error(f"Simple transcription failed for {file.filename}: {e}")
+        logger.error(f"AssemblyAI transcription failed for {file.filename}: {e}")
         raise HTTPException(status_code=500, detail=f"Transcription failed: {e}")
-    finally:
-        if tmp_path and os.path.exists(tmp_path):
-            os.remove(tmp_path)
+
 
 
 async def generate_gemini_content(prompt: str, model_name: str = "gemini-1.5-flash", is_json: bool = False):

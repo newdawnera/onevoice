@@ -3,7 +3,7 @@ fastapi[all]
 uvicorn
 python-dotenv
 google-generativeai
-faster-whisper @ git+https://github.com/SYSTRAN/faster-whisper.git
+assemblyai
 torch
 transformers
 pypdf

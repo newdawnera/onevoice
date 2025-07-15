@@ -1096,13 +1096,11 @@ const App = (() => {
       showAlert("Please stop live dictation before recording media.", "info");
       return;
     }
+
     try {
       systemStream = await navigator.mediaDevices.getDisplayMedia({
         video: true,
         audio: { channelCount: 2, sampleRate: 48000 },
-      });
-      systemStream.getVideoTracks()[0]?.addEventListener("ended", () => {
-        if (state.isRecordingMedia) stopSystemAudioRecording();
       });
 
       if (el.includeMicCheckbox.checked) {
@@ -1118,10 +1116,26 @@ const App = (() => {
         }
       }
 
-      const hasSystemAudio = systemStream.getAudioTracks().length > 0;
-      const hasMicAudio =
-        micStreamForSystem && micStreamForSystem.getAudioTracks().length > 0;
-      if (!hasSystemAudio && !hasMicAudio) {
+      const audioContext = new AudioContext();
+      const destination = audioContext.createMediaStreamDestination();
+      let hasAudio = false;
+
+      if (systemStream.getAudioTracks().length > 0) {
+        const systemSource = audioContext.createMediaStreamSource(systemStream);
+        systemSource.connect(destination);
+        hasAudio = true;
+      }
+      if (
+        micStreamForSystem &&
+        micStreamForSystem.getAudioTracks().length > 0
+      ) {
+        const micSource =
+          audioContext.createMediaStreamSource(micStreamForSystem);
+        micSource.connect(destination);
+        hasAudio = true;
+      }
+
+      if (!hasAudio) {
         showAlert(
           "No audio source found (neither system nor microphone). Recording cancelled.",
           "danger"
@@ -1130,6 +1144,12 @@ const App = (() => {
         return;
       }
 
+      const mixedAudioStream = destination.stream;
+
+      systemStream.getVideoTracks()[0]?.addEventListener("ended", () => {
+        if (state.isRecordingMedia) stopSystemAudioRecording();
+      });
+
       state.isRecordingMedia = true;
       el.recordBtn.disabled = true;
       el.systemRecordingIndicator.classList.remove("hidden");
@@ -1137,42 +1157,20 @@ const App = (() => {
       el.recordSystemBtn.classList.remove("bg-blue-600");
       el.includeMicCheckbox.disabled = true;
 
-      const recordingPromise = new Promise((resolve) => {
-        const blobs = {};
-        let sourcesToRecord = (hasSystemAudio ? 1 : 0) + (hasMicAudio ? 1 : 0);
-        const onStop = (source, blob) => {
-          blobs[source] = blob;
-          if (--sourcesToRecord === 0) resolve(blobs);
-        };
-
-        if (hasSystemAudio) {
-          const systemAudioStream = new MediaStream(
-            systemStream.getAudioTracks()
-          );
-          systemMediaRecorder = new MediaRecorder(systemAudioStream, {
-            mimeType: "audio/webm;codecs=opus",
-          });
-          const chunks = [];
-          systemMediaRecorder.ondataavailable = (e) =>
-            e.data.size > 0 && chunks.push(e.data);
-          systemMediaRecorder.onstop = () =>
-            onStop("system", new Blob(chunks, { type: "audio/webm" }));
-          systemMediaRecorder.start();
-        }
-        if (hasMicAudio) {
-          micMediaRecorder = new MediaRecorder(micStreamForSystem, {
-            mimeType: "audio/webm;codecs=opus",
-          });
-          const chunks = [];
-          micMediaRecorder.ondataavailable = (e) =>
-            e.data.size > 0 && chunks.push(e.data);
-          micMediaRecorder.onstop = () =>
-            onStop("user", new Blob(chunks, { type: "audio/webm" }));
-          micMediaRecorder.start();
-        }
+      const chunks = [];
+      const mediaRecorder = new MediaRecorder(mixedAudioStream, {
+        mimeType: "audio/webm;codecs=opus",
       });
 
-      recordingPromise.then(async (blobs) => {
+      mediaRecorder.ondataavailable = (e) =>
+        e.data.size > 0 && chunks.push(e.data);
+      mediaRecorder.start();
+
+      micMediaRecorder = mediaRecorder;
+
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(chunks, { type: "audio/webm" });
+
         const Delta = Quill.import("delta");
         const loaderIndex = inputQuill.getLength();
         inputQuill.updateContents(
@@ -1184,11 +1182,7 @@ const App = (() => {
         );
 
         const formData = new FormData();
-        if (blobs.system)
-          formData.append("system_audio", blobs.system, "system_audio.webm");
-        if (blobs.user)
-          formData.append("user_audio", blobs.user, "user_audio.webm");
-
+        formData.append("file", audioBlob, "mixed_audio.webm");
         formData.append("language", state.transcriptionLanguage);
 
         transcriptionAbortController = new AbortController();
@@ -1209,17 +1203,19 @@ const App = (() => {
           updateUI();
           if (newText) showAlert("Media transcribed successfully!", "success");
         } catch (error) {
-          if (error.name !== "AbortError")
+          if (error.name !== "AbortError") {
             inputQuill.updateContents(
               new Delta().retain(loaderIndex).delete(1),
               "api"
             );
+          }
         }
-      });
+      };
     } catch (err) {
       if (err.name === "NotAllowedError" || err.name === "AbortError") {
         showAlert("Screen recording permission was denied.", "info");
       } else {
+        console.error("Recording failed:", err);
         showAlert(
           "Could not start system audio recording. Please grant permissions.",
           "danger"

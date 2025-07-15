@@ -19,40 +19,53 @@ import config
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-@router.post("/transcribe/", summary="Transcribe Audio/Video File(s)")
-async def transcribe_endpoint(
-    user_audio: UploadFile = File(None),
-    system_audio: UploadFile = File(None),
-    file: UploadFile = File(None),
-    language: str = Form(None)
-):
-    if file:
-        transcription = await utils.transcribe_audio_file_simple(file, language)
-        return {"transcription": transcription}
+# @router.post("/transcribe/", summary="Transcribe Audio/Video File(s)")
+# async def transcribe_endpoint(
+#     user_audio: UploadFile = File(None),
+#     system_audio: UploadFile = File(None),
+#     file: UploadFile = File(None),
+#     language: str = Form(None)
+# ):
+#     if file:
+#         transcription = await utils.transcribe_audio_file_simple(file, language)
+#         return {"transcription": transcription}
 
-    if not user_audio and not system_audio:
-        raise HTTPException(status_code=400, detail="No audio files provided.")
+#     if not user_audio and not system_audio:
+#         raise HTTPException(status_code=400, detail="No audio files provided.")
 
-    tasks = []
-    if user_audio: tasks.append(utils.transcribe_to_segments(user_audio, language))
-    if system_audio: tasks.append(utils.transcribe_to_segments(system_audio, language))
+#     tasks = []
+#     if user_audio: tasks.append(utils.transcribe_to_segments(user_audio, language))
+#     if system_audio: tasks.append(utils.transcribe_to_segments(system_audio, language))
     
-    transcription_results = await asyncio.gather(*tasks)
+#     transcription_results = await asyncio.gather(*tasks)
 
-    all_segments = []
-    result_index = 0
-    if user_audio:
-        for seg in transcription_results[result_index]: seg['source'] = 'Speaker 1'
-        all_segments.extend(transcription_results[result_index])
-        result_index += 1
-    if system_audio:
-        for seg in transcription_results[result_index]: seg['source'] = 'Speaker 2'
-        all_segments.extend(transcription_results[result_index])
+#     all_segments = []
+#     result_index = 0
+#     if user_audio:
+#         for seg in transcription_results[result_index]: seg['source'] = 'Speaker 1'
+#         all_segments.extend(transcription_results[result_index])
+#         result_index += 1
+#     if system_audio:
+#         for seg in transcription_results[result_index]: seg['source'] = 'Speaker 2'
+#         all_segments.extend(transcription_results[result_index])
 
-    all_segments.sort(key=lambda x: x['start'])
-    raw_transcript = "\n".join([f"{s['source'].capitalize()}: {s['text'].strip()}" for s in all_segments])
+#     all_segments.sort(key=lambda x: x['start'])
+#     raw_transcript = "\n".join([f"{s['source'].capitalize()}: {s['text'].strip()}" for s in all_segments])
 
-    return {"transcription": raw_transcript}
+#     return {"transcription": raw_transcript}
+
+@router.post("/transcribe/", summary="Transcribe Audio/Video File")
+async def transcribe_endpoint(
+    file: UploadFile = File(None)):
+    if not file:
+        raise HTTPException(status_code=400, detail="No audio file provided.")
+
+    # The new util function handles everything, including speaker separation.
+    transcription = await utils.transcribe_with_assemblyai(file)
+    
+    return {"transcription": transcription}
+
+
 
 @router.post("/upload-document/", summary="Upload and Process a Document")
 async def upload_document_endpoint(file: UploadFile = File(...), language: str = Form(None)):
