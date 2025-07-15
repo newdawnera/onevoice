@@ -374,7 +374,7 @@ const actionPage = (user, db) => {
       button.disabled = true;
 
       try {
-        const response = await fetch(`${MY_API}/api/send-manual-reminder`, {
+        const response = await fetch(`${MY_API}/send-manual-reminder`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ task: task, userId: currentUser.uid }),

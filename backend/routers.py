@@ -7,7 +7,7 @@ import asyncio, httpx
 from datetime import date, datetime, timedelta
 import logging
 import html
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, Header, UploadFile, File, Form, HTTPException
 from fastapi.responses import JSONResponse, HTMLResponse
 from typing import List
 from bs4 import BeautifulSoup
@@ -133,7 +133,10 @@ Text to summarize:
     email_subject = email_subject_raw.strip().replace('"', '')
 
     final_summary = summary
-    if request.target_language and request.target_language != "No Translation":
+    if request.target_language and request.target_language == "No Translation":
+        translation_prompt = f"Preserve the original language of the text without any additional titles or explanations, You MUST not translate to English if the text is not in English.\n\nText:\n---\n{summary}"
+        final_summary = await utils.generate_gemini_content(translation_prompt)
+    else:
         translation_prompt = f"Translate the following text into {request.target_language}. Provide only the translated text, without any additional titles or explanations.\n\nText:\n---\n{summary}"
         final_summary = await utils.generate_gemini_content(translation_prompt)
 
@@ -306,8 +309,14 @@ async def send_welcome_email_endpoint(request: WelcomeEmailRequest):
     await utils.send_welcome_email(request.email, request.username)
     return {"message": "Welcome email sent successfully."}
 
-@router.post("/send-task-reminders", summary="Scheduled Task Reminder Trigger")
-async def task_reminder_scheduler():
+@router.get("/send-task-reminders", summary="Scheduled Task Reminder Trigger")
+async def task_reminder_scheduler(authorization: str = Header(None)):
+
+    # this is to verify the secret token from Upstash
+    expected_token = f"Bearer {os.getenv('QSTASH_TOKEN')}"
+    if authorization != expected_token:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
     if not config.db:
         raise HTTPException(status_code=500, detail="Firestore is not initialized.")
     logger.info("Running daily task reminder check...")
