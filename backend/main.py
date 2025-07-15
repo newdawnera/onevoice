@@ -38,6 +38,14 @@ async def root():
     return {"message": "Welcome to Ally - the future of AI meeting management!"}
 
 
+#because of the way Render works, I decided to write this endpoint for periodic health checks to ensure the app stays awake and responsive - and avoid spinningdown issues
+@app.get("/health", status_code=200)
+async def health_check():
+    """A simple endpoint for uptime monitoring."""
+    return {"status": "ok"}
+
+
+
 if __name__ == "__main__":
     
     uvicorn.run(app, host="0.0.0.0", port=8000)
