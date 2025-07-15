@@ -47,33 +47,38 @@ def setup_gemini_api():
         print(f"Error configuring Gemini API: {e}")
 
 
+# config.py
+
 def load_html_templates():
     
     global welcome_template, email_template, reminder_template, success_template
     
+    # Use reliable paths relative to the config.py file
+    base_path = os.path.dirname(__file__)
+
     try:
-        with open("../frontend/welcome-email-template.html", "r", encoding="utf-8") as f:
+        with open(os.path.join(base_path, "templates/welcome-email-template.html"), "r", encoding="utf-8") as f:
             welcome_template = f.read()
         print("Loaded welcome-email-template.html")
     except FileNotFoundError:
         print("Warning: welcome-email-template.html not found. Welcome emails won't work.")
 
     try:
-        with open("../frontend/email-template.html", "r", encoding="utf-8") as f:
+        with open(os.path.join(base_path, "templates/email-template.html"), "r", encoding="utf-8") as f:
             email_template = f.read()
         print("Loaded email-template.html")
     except FileNotFoundError:
         print("Warning: email-template.html not found. Emails will look basic.")
 
     try:
-        with open("../frontend/task-reminder-email-template.html", "r", encoding="utf-8") as f:
+        with open(os.path.join(base_path, "templates/task-reminder-email-template.html"), "r", encoding="utf-8") as f:
             reminder_template = f.read()
         print("Loaded task-reminder-email-template.html")
     except FileNotFoundError:
         print("Warning: task-reminder-email-template.html not found. Reminder emails won't work.")
 
     try:
-        with open("../frontend/success.html", "r", encoding="utf-8") as f:
+        with open(os.path.join(base_path, "templates/success.html"), "r", encoding="utf-8") as f:
             success_template = f.read()
         print("Loaded success.html")
     except FileNotFoundError:
