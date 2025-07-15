@@ -12,7 +12,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.9.1/firebase-firestore.js";
 
 const actionPage = (user, db) => {
-  const MY_API = "https://ally-backend-y2pq.onrender.com/";
+  const MY_API = "https://ally-backend-y2pq.onrender.com";
   const currentUser = user;
   const actionLogsCollectionRef = collection(
     db,
@@ -374,14 +374,11 @@ const actionPage = (user, db) => {
       button.disabled = true;
 
       try {
-        const response = await fetch(
-          `${MY_API}/api/send-manual-reminder`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ task: task, userId: currentUser.uid }),
-          }
-        );
+        const response = await fetch(`${MY_API}/api/send-manual-reminder`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ task: task, userId: currentUser.uid }),
+        });
 
         if (!response.ok) {
           const errorData = await response.json();
