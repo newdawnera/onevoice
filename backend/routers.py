@@ -374,6 +374,18 @@ async def update_task_status_from_email(userId: str, taskId: str, newStatus: str
 
 @router.post("/send-manual-reminder", summary="Send a Manual Task Reminder Email")
 async def send_manual_reminder_endpoint(request: ManualEmailRequest):
+
+    if not request.task.get("deadline"):
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot send a reminder because the task does not have a deadline."
+        )
+    elif not request.task.get("startDate"):
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot send a reminder because the task does not have a start date."
+        )
+
     await utils.send_reminder_email(request.task, request.userId, request.task.get("id"), "manual_notification")
     return {"message": "Manual reminder email sent."}
 
