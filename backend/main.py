@@ -39,7 +39,7 @@ async def root():
 
 
 #because of the way Render works, I decided to write this endpoint for periodic health checks to ensure the app stays awake and responsive - and avoid spinningdown issues
-@app.get("/health", status_code=200, methods=["GET", "HEAD"])
+@app.api_route("/health", status_code=200, methods=["GET", "HEAD"])
 async def health_check():
     """A simple endpoint for uptime monitoring."""
     return {"status": "ok"}
