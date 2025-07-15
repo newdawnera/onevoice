@@ -31,7 +31,7 @@ app.add_middleware(
 )
 
 
-app.include_router(api_router, prefix="/api", tags=["Ally API"])
+app.include_router(api_router)
 
 @app.get("/", include_in_schema=False)
 async def root():
