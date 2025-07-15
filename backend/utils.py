@@ -191,7 +191,7 @@ async def send_reminder_email(task_data, user_id, task_id, reminder_type):
 
     subject, reminder_message = "", ""
     base_url = os.getenv("MY_API", "https://ally-backend-y2pq.onrender.com")
-    update_url = f"{base_url}/api/update-task-status"
+    update_url = f"{base_url}/update-task-status"
     in_progress_url = f"{update_url}?userId={user_id}&taskId={task_id}&newStatus=In Progress"
     completed_url = f"{update_url}?userId={user_id}&taskId={task_id}&newStatus=Completed"
     task_title = task_data.get('title', 'N/A')
