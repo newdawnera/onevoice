@@ -7,8 +7,7 @@ import asyncio, httpx
 from datetime import date, datetime, timedelta
 import logging
 import html
-import websockets
-from fastapi import APIRouter, Header, UploadFile, File, Form, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Header, UploadFile, File, Form, HTTPException
 from fastapi.responses import JSONResponse, HTMLResponse
 from typing import List
 from bs4 import BeautifulSoup
@@ -20,50 +19,40 @@ import config
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-ASSEMBLYAI_API_KEY = os.getenv("ASSEMBLYAI_API_KEY")
-if not ASSEMBLYAI_API_KEY:
-    raise Exception("Missing ASSEMBLYAI_API_KEY environment variable.")
+# @router.post("/transcribe/", summary="Transcribe Audio/Video File(s)")
+# async def transcribe_endpoint(
+#     user_audio: UploadFile = File(None),
+#     system_audio: UploadFile = File(None),
+#     file: UploadFile = File(None),
+#     language: str = Form(None)
+# ):
+#     if file:
+#         transcription = await utils.transcribe_audio_file_simple(file, language)
+#         return {"transcription": transcription}
 
-# AssemblyAI's real-time endpoint URL
-ASSEMBLYAI_URL = f"wss://api.assemblyai.com/v1/realtime/ws?sample_rate=16000"
+#     if not user_audio and not system_audio:
+#         raise HTTPException(status_code=400, detail="No audio files provided.")
 
-# New WebSocket endpoint for real-time transcription
-@router.websocket("/ws/transcribe")
-async def websocket_transcribe_endpoint(client_socket: WebSocket):
-    await client_socket.accept()
+#     tasks = []
+#     if user_audio: tasks.append(utils.transcribe_to_segments(user_audio, language))
+#     if system_audio: tasks.append(utils.transcribe_to_segments(system_audio, language))
     
-    try:
-        async with websockets.connect(
-            ASSEMBLYAI_URL,
-            headers={"Authorization": ASSEMBLYAI_API_KEY}
-        ) as assemblyai_socket:
-            
-            # This function listens for messages from the client (browser)
-            # and forwards them to AssemblyAI
-            async def forward_audio_to_assemblyai():
-                while True:
-                    audio_data = await client_socket.receive_bytes()
-                    # AssemblyAI expects audio data in a specific JSON format
-                    await assemblyai_socket.send(json.dumps({"audio_data": base64.b64encode(audio_data).decode()}))
+#     transcription_results = await asyncio.gather(*tasks)
 
-            # This function listens for messages from AssemblyAI
-            # and forwards them back to the client (browser)
-            async def forward_transcripts_to_client():
-                while True:
-                    transcript_data = await assemblyai_socket.recv()
-                    await client_socket.send_text(transcript_data)
-            
-            # Run both functions concurrently
-            await asyncio.gather(forward_audio_to_assemblyai(), forward_transcripts_to_client())
+#     all_segments = []
+#     result_index = 0
+#     if user_audio:
+#         for seg in transcription_results[result_index]: seg['source'] = 'Speaker 1'
+#         all_segments.extend(transcription_results[result_index])
+#         result_index += 1
+#     if system_audio:
+#         for seg in transcription_results[result_index]: seg['source'] = 'Speaker 2'
+#         all_segments.extend(transcription_results[result_index])
 
-    except WebSocketDisconnect:
-        logger.info("Client disconnected from WebSocket.")
-    except Exception as e:
-        logger.error(f"WebSocket Error: {e}")
-    finally:
-        # Ensure socket is closed on error
-        if not client_socket.client_state == 'DISCONNECTED':
-            await client_socket.close()
+#     all_segments.sort(key=lambda x: x['start'])
+#     raw_transcript = "\n".join([f"{s['source'].capitalize()}: {s['text'].strip()}" for s in all_segments])
+
+#     return {"transcription": raw_transcript}
 
 @router.post("/transcribe/", summary="Transcribe Audio/Video File")
 async def transcribe_endpoint(

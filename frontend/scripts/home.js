@@ -35,7 +35,7 @@ const App = (() => {
   let transcriptionAbortController;
   let systemMediaRecorder, micMediaRecorder;
   let systemStream, micStreamForSystem;
-  let webSocket, audioContext, microphoneStream, scriptProcessor;
+  let recognition;
   let currentResizableImage = null;
 
   const el = {};
@@ -627,21 +627,11 @@ const App = (() => {
     el.year.textContent = new Date().getFullYear();
     el.recordBtn.innerHTML = ICONS.MIC_ON;
 
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-      console.warn("getDisplayMedia API not supported on this browser.");
-      // Hide the entire recording block for media
-      const mediaRecordContainer = el.recordSystemBtn.closest(
-        ".flex.flex-wrap.items-center.gap-2.p-3.border.rounded-lg"
-      );
-      if (mediaRecordContainer) {
-        mediaRecordContainer.style.display = "none";
-      }
-    }
-
     initQuillEditors();
 
     loadStateFromLocalStorage();
 
+    initSpeechRecognition();
     setupEventListeners();
 
     const languages = {
@@ -840,128 +830,94 @@ const App = (() => {
     });
   }
 
-  // Paste this code block into home.js, for example, before setupEventListeners()
-
-  function floatTo16BitPCM(input) {
-    const output = new Int16Array(input.length);
-    for (let i = 0; i < input.length; i++) {
-      const s = Math.max(-1, Math.min(1, input[i]));
-      output[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+  function initSpeechRecognition() {
+    const SpeechRecognition =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      el.speechToTextContainer.innerHTML =
+        '<p class="text-sm text-red-500">Speech recognition is not supported by your browser.</p>';
+      return;
     }
-    return output;
-  }
 
-  function stopRealTimeDictation() {
-    if (state.isDictating) {
-      state.isDictating = false; // Set state immediately to prevent re-entry
+    recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    let dictationStartIndex = 0;
+    let currentDictationLength = 0;
 
-      if (microphoneStream) {
-        microphoneStream.getTracks().forEach((track) => track.stop());
-        microphoneStream = null;
+    recognition.onstart = function () {
+      state.isDictating = true;
+      el.recordBtn.innerHTML = ICONS.MIC_OFF;
+      el.recordingIndicator.classList.remove("hidden");
+      el.recordSystemBtn.disabled = true;
+      const editorLength = inputQuill.getLength();
+      if (editorLength > 1 && inputQuill.getText(editorLength - 2, 1) !== " ") {
+        inputQuill.insertText(editorLength - 1, " ", "user");
       }
-      if (scriptProcessor) {
-        scriptProcessor.disconnect();
-        scriptProcessor = null;
-      }
-      if (audioContext) {
-        audioContext.close();
-        audioContext = null;
-      }
-      if (webSocket && webSocket.readyState === WebSocket.OPEN) {
-        webSocket.send(JSON.stringify({ terminate_session: true }));
-        webSocket.close();
-        webSocket = null;
-      }
+      dictationStartIndex = inputQuill.getLength() - 1;
+      currentDictationLength = 0;
+    };
 
-      // Update UI
+    recognition.onresult = function (event) {
+      let finalTranscript = "";
+      let interimTranscript = "";
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) finalTranscript += transcript;
+        else interimTranscript += transcript;
+      }
+      const Delta = Quill.import("delta");
+      const delta = new Delta()
+        .retain(dictationStartIndex)
+        .delete(currentDictationLength)
+        .insert(finalTranscript + interimTranscript);
+      inputQuill.updateContents(delta, "user");
+      currentDictationLength = (finalTranscript + interimTranscript).length;
+      if (finalTranscript) {
+        dictationStartIndex += finalTranscript.length;
+        currentDictationLength -= finalTranscript.length;
+      }
+    };
+
+    recognition.onend = function () {
+      if (state.isDictating) {
+        try {
+          recognition.lang = state.transcriptionLanguage;
+          recognition.start();
+        } catch (e) {
+          state.isDictating = false;
+          el.recordBtn.innerHTML = ICONS.MIC_ON;
+          el.recordingIndicator.classList.add("hidden");
+          el.recordSystemBtn.disabled = false;
+          showAlert("Dictation stopped.", "info");
+        }
+      } else {
+        el.recordBtn.innerHTML = ICONS.MIC_ON;
+        el.recordingIndicator.classList.add("hidden");
+        el.recordSystemBtn.disabled = false;
+      }
+    };
+
+    recognition.onerror = function (event) {
+      console.error("SpeechRecognition error:", event.error);
+      let errorMessage = "Speech recognition error: " + event.error;
+      if (
+        event.error === "not-allowed" ||
+        event.error === "service-not-allowed"
+      ) {
+        errorMessage =
+          "Microphone access was denied. Please allow microphone access in your browser settings.";
+      } else if (event.error === "no-speech") {
+        return;
+      } else if (event.error === "audio-capture") {
+        errorMessage =
+          "Microphone not available. Another application might be using it.";
+      }
+      showAlert(errorMessage, "danger");
+      state.isDictating = false;
       el.recordBtn.innerHTML = ICONS.MIC_ON;
       el.recordingIndicator.classList.add("hidden");
       el.recordSystemBtn.disabled = false;
-    }
-  }
-
-  async function startRealTimeDictation() {
-    if (state.isDictating || state.isRecordingMedia) return;
-    state.isDictating = true; // Set state immediately
-
-    // 1. Update UI to show we're starting
-    el.recordBtn.innerHTML = ICONS.MIC_OFF;
-    el.recordingIndicator.classList.remove("hidden");
-    el.recordSystemBtn.disabled = true;
-
-    // 2. Establish WebSocket connection
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const backendUrl = MY_API.replace(/^https?:\/\//, ""); // Ensure we use the right protocol
-    webSocket = new WebSocket(`${protocol}//${backendUrl}/ws/transcribe`);
-
-    webSocket.onopen = async () => {
-      try {
-        // 3. Set up Web Audio API to capture microphone
-        microphoneStream = await navigator.mediaDevices.getUserMedia({
-          audio: true,
-        });
-        audioContext = new AudioContext({ sampleRate: 16000 }); // Request 16kHz sample rate
-        const source = audioContext.createMediaStreamSource(microphoneStream);
-        scriptProcessor = audioContext.createScriptProcessor(4096, 1, 1);
-
-        const sampleRate = audioContext.sampleRate;
-        if (sampleRate !== 16000) {
-          console.warn(
-            `Browser provided sample rate ${sampleRate}, but 16000 is required. Audio will be downsampled if possible, but quality may vary.`
-          );
-        }
-
-        // 4. Send audio chunks to server when available
-        scriptProcessor.onaudioprocess = (event) => {
-          if (!state.isDictating) return; // Don't send data if we've stopped
-          const inputData = event.inputBuffer.getChannelData(0);
-          const pcmData = floatTo16BitPCM(inputData);
-          if (webSocket.readyState === WebSocket.OPEN) {
-            webSocket.send(pcmData.buffer);
-          }
-        };
-
-        source.connect(scriptProcessor);
-        scriptProcessor.connect(audioContext.destination);
-      } catch (err) {
-        console.error("Error setting up audio stream:", err);
-        showAlert(
-          "Could not access microphone. Please grant permission.",
-          "danger"
-        );
-        stopRealTimeDictation(); // Clean up on error
-      }
-    };
-
-    // 5. Handle incoming transcript messages from the server
-    webSocket.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.message_type === "FinalTranscript" && data.text.trim()) {
-          // Append the final transcript to the editor
-          const textToInsert = data.text.trim() + " ";
-          inputQuill.insertText(inputQuill.getLength(), textToInsert, "user");
-          // Move cursor to the end
-          inputQuill.setSelection(inputQuill.getLength(), 0, "user");
-        }
-        // You could add logic here for 'PartialTranscript' to show live text
-      } catch (error) {
-        console.error("Error processing transcript message:", error);
-      }
-    };
-
-    webSocket.onerror = (error) => {
-      console.error("WebSocket error:", error);
-      showAlert("A connection error occurred during dictation.", "danger");
-      stopRealTimeDictation();
-    };
-
-    webSocket.onclose = () => {
-      // This will be called when the connection closes, either intentionally or due to an error.
-      // The stopRealTimeDictation function handles the UI cleanup.
-      if (state.isDictating) {
-        stopRealTimeDictation();
-      }
     };
   }
 
@@ -991,14 +947,6 @@ const App = (() => {
       hideSuggestions();
       goToPage(1);
       saveStateToLocalStorage();
-    });
-
-    el.recordBtn.addEventListener("click", () => {
-      if (state.isDictating) {
-        stopRealTimeDictation();
-      } else {
-        startRealTimeDictation();
-      }
     });
 
     el.fileUpload.addEventListener("change", handleFileUpload);
@@ -1055,6 +1003,25 @@ const App = (() => {
       }
     });
 
+    if (recognition) {
+      el.recordBtn.addEventListener("click", () => {
+        if (state.isDictating) {
+          state.isDictating = false;
+          recognition.stop();
+        } else if (!state.isRecordingMedia) {
+          try {
+            recognition.lang = state.transcriptionLanguage;
+
+            recognition.start();
+          } catch (e) {
+            showAlert(
+              "Could not start recording. Please wait and try again.",
+              "danger"
+            );
+          }
+        }
+      });
+    }
     el.recordSystemBtn.addEventListener("click", () => {
       if (state.isRecordingMedia) stopSystemAudioRecording();
       else handleSystemAudioRecord();
