@@ -628,11 +628,15 @@ const App = (() => {
     el.recordBtn.innerHTML = ICONS.MIC_ON;
 
     if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-    console.warn("getDisplayMedia API not supported on this browser.");
-    // Hide the entire recording block for media
-    const mediaRecordContainer = el.recordSystemBtn.closest(".flex.flex-wrap.items-center.gap-2.p-3.border.rounded-lg");
-    if (mediaRecordContainer) {
-      mediaRecordContainer.style.display = 'none';
+      console.warn("getDisplayMedia API not supported on this browser.");
+      // Hide the entire recording block for media
+      const mediaRecordContainer = el.recordSystemBtn.closest(
+        ".flex.flex-wrap.items-center.gap-2.p-3.border.rounded-lg"
+      );
+      if (mediaRecordContainer) {
+        mediaRecordContainer.style.display = "none";
+      }
+    }
 
     initQuillEditors();
 
