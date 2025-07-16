@@ -35,7 +35,7 @@ async def websocket_transcribe_endpoint(client_socket: WebSocket):
     try:
         async with websockets.connect(
             ASSEMBLYAI_URL,
-            extra_headers={"Authorization": ASSEMBLYAI_API_KEY}
+            headers={"Authorization": ASSEMBLYAI_API_KEY}
         ) as assemblyai_socket:
             
             # This function listens for messages from the client (browser)
