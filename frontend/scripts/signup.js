@@ -51,7 +51,7 @@ signupForm.addEventListener("submit", async (e) => {
 
     try {
       const backendUrl =
-        "https://ally-backend-y2pq.onrender.com/api/send-welcome-email";
+        "https://ally-backend-y2pq.onrender.com/send-welcome-email";
       await fetch(backendUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
