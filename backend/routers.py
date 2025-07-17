@@ -44,57 +44,49 @@ async def upload_document_endpoint(file: UploadFile = File(...)):
 async def generate_result_endpoint(request: ResultRequest):
     if request.role and request.role != "No Selection":
         perspective_role = request.role
-        perspective = f"only focusing on discussions that concern the {perspective_role}"
     else:
-        perspective_role = "organization"
-        perspective = "providing a general overview"
+        perspective_role = "general overview"
+        
 
     summary_prompt = f"""
 You are an advanced and professional assistant that summarizes content. You work on meeting transcripts as well as academic, technical, instructional, or communication documents.
 
-Given the following document — whether a meeting transcript or another text source — generate a well-structured and accurate summary from the perspective of {perspective}.
+Your primary task is to generate a well-structured and accurate summary of the text provided below from a {perspective_role} perspective.
 
-If the selected role ({perspective_role}) is not mentioned or discussed in the document, explicitly state that the role was not part of the conversation. Then provide a general overview of the meeting or document, highlighting only points that might indirectly affect the {perspective_role} or the organization.
+CRITICAL LANGUAGE RULE: Your entire response, including all headings and content, MUST be in the same language as the original text provided. Do not translate any part of the document, including names, terms, or headings.
 
+---
 If the document appears to be a meeting transcript:
-Generate a concise, well-organized meeting summary using these standard headings only if available in the input. Omit any heading that has no relevant information. Do not fabricate or assume missing details. Summarize through the lens of the {perspective_role}:
 
-1. Prioritize discussions, risks, actions, or decisions that directly impact or concern the {perspective_role}.
-2. Minimize or omit unrelated content unless it directly affects the {perspective_role}.
+Generate a concise, well-organized meeting summary. Summarize through the lens of the {perspective_role} only focusing on discussions that concern the {perspective_role}.
+- Use appropriate headings based on the content (e.g., "Agenda," "Discussion Summary," "Decisions Made," and "Action Items"). Ensure the headings you create are also in the original language.
+- Omit any heading that has no relevant information.
+- Prioritize discussions, risks, actions, or decisions that directly impact or concern the {perspective_role}.
+- Minimize or omit unrelated content unless it directly affects the {perspective_role}.
 
-Standard headings (Headings and content MUST be in the original language of the document – Do not translate headings or content):
+---
+If the document is NOT a meeting transcript:
 
-1. Meeting Details (date, time, platform, facilitator, note taker if provided)
-2. Attendees (list participants; include absentees if mentioned)
-3. Agenda (pre-set or inferred topics)
-4. Discussion Summary / Key Points (prioritize discussion relevant to the {perspective_role})
-5. Decisions Made (only include decisions that affect the {perspective_role})
-6. Action Items (tasks related to or assigned to the {perspective_role}, include owner and deadlines if present)
-7. Next Steps (only unresolved issues or follow-ups involving the {perspective_role})
-8. Next Meeting (include schedule and any agenda items affecting the {perspective_role})
-9. Additional Notes (context that helps the {perspective_role} plan or react)
+Generate a structured summary using headings appropriate to the content (e.g., "Key Findings," "Main Insights," or "Recommended Actions").
+- Always summarize through the lens of a {perspective_role}.
+- Tailor the structure to match the document's format, purpose, and type (e.g., academic report, technical documentation, guideline, business memo, etc.).
 
-If the document is not a meeting transcript:
-Generate a structured summary using headings appropriate to the content (e.g., "Key Findings," "Main Insights," "Risks for {perspective_role}," or "Recommended Actions"). Always summarize through the lens of the {perspective_role}.
-
-Avoid reframing non-meeting content as a meeting. Tailor the structure to match the document’s format, purpose, and type (e.g., academic report, technical documentation, guideline, business memo, etc.).
-
+---
 Language Handling Rule:
 
-1. Do not translate any part of the original text.
-2. Preserve all headings, names, and content in the original language as provided (e.g., Arabic, French, etc.).
-3. Summarize in the same language as the source unless explicitly instructed to translate.
+- Do not translate any part of the original text.
+- Preserve all headings, names, and content in the original language as provided (e.g., Arabic, French, etc.).
+- Summarize in the same language as the source unless explicitly instructed to translate.
 
+---
 General Rules:
 
-1. Never fabricate, assume, or generalize any information.
-2. Never reframe non-meeting content as a meeting.
-3. You MUST use only the language and tone provided.
-4. Use concise, plain text (no markdown formatting).
-5. Do not use ** or any stylized formatting.
-6. Structure output clearly and accurately.
-7. Always reflect the role’s perspective if provided.
-8. Recheck for at least 99% accuracy before replying.
+- Role Handling: If the selected role ({perspective_role}) is not mentioned or discussed in the document, explicitly state that the role was not part of the conversation (in the source language). Then provide a general overview, highlighting only points that might indirectly affect the {perspective_role}.
+- Accuracy: Never fabricate, assume, or generalize information not present in the text. Recheck your output for at least 99% accuracy before replying.
+- Tone and Language: Use only the language and tone provided in the original document.
+- Formatting: Use concise, plain text. Do not use markdown formatting like ``.
+- Structure: Structure the output clearly and accurately. Do not reframe non-meeting content as a meeting.
+
 
 
 Text to summarize:
