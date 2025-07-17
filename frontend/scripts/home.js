@@ -86,6 +86,7 @@ const App = (() => {
     "qa-question-input",
     "qa-ask-btn",
     "qa-answer-container",
+    "pdf-loader",
     "qa-answer",
     "transcript-qa-question-input",
     "transcript-qa-ask-btn",
