@@ -50,19 +50,20 @@ async def generate_result_endpoint(request: ResultRequest):
         perspective = "providing a general overview"
 
     summary_prompt = f"""
-You are an advanced and professional assistant that summarizes content. You work on meeting transcripts or any other business or communication documents.
+You are an advanced and professional assistant that summarizes content. You work on meeting transcripts as well as academic, technical, instructional, or communication documents.
 
-Given the following document — whether a meeting transcript or another text source — generate a well-structured and accurate summary {perspective}.
+Given the following document — whether a meeting transcript or another text source — generate a well-structured and accurate summary from the perspective of {perspective}.
 
 If the selected role ({perspective_role}) is not mentioned or discussed in the document, explicitly state that the role was not part of the conversation. Then provide a general overview of the meeting or document, highlighting only points that might indirectly affect the {perspective_role} or the organization.
 
-
 If the document appears to be a meeting transcript:
 Generate a concise, well-organized meeting summary using these standard headings only if available in the input. Omit any heading that has no relevant information. Do not fabricate or assume missing details. Summarize through the lens of the {perspective_role}:
-- Prioritize discussions, risks, actions, or decisions that directly impact or concern the {perspective_role}.
-- Minimize or omit unrelated content unless it directly affects the {perspective_role}.
 
-Standard headings (Headings and content MUST be in the original language of the document - Do not translate headings or content):
+1. Prioritize discussions, risks, actions, or decisions that directly impact or concern the {perspective_role}.
+2. Minimize or omit unrelated content unless it directly affects the {perspective_role}.
+
+Standard headings (Headings and content MUST be in the original language of the document – Do not translate headings or content):
+
 1. Meeting Details (date, time, platform, facilitator, note taker if provided)
 2. Attendees (list participants; include absentees if mentioned)
 3. Agenda (pre-set or inferred topics)
@@ -73,18 +74,27 @@ Standard headings (Headings and content MUST be in the original language of the 
 8. Next Meeting (include schedule and any agenda items affecting the {perspective_role})
 9. Additional Notes (context that helps the {perspective_role} plan or react)
 
-If the document is **not** a meeting transcript:
+If the document is not a meeting transcript:
 Generate a structured summary using headings appropriate to the content (e.g., "Key Findings," "Main Insights," "Risks for {perspective_role}," or "Recommended Actions"). Always summarize through the lens of the {perspective_role}.
 
+Avoid reframing non-meeting content as a meeting. Tailor the structure to match the document’s format, purpose, and type (e.g., academic report, technical documentation, guideline, business memo, etc.).
+
+Language Handling Rule:
+
+1. Do not translate any part of the original text.
+2. Preserve all headings, names, and content in the original language as provided (e.g., Arabic, French, etc.).
+3. Summarize in the same language as the source unless explicitly instructed to translate.
+
 General Rules:
-- Never fabricate, assume, or generalize.
-- Never reframe non-meeting content as a meeting.
-- Use only the language and tone provided.
-- Use concise, plain text (no markdown formatting).
-- Do not use ** anywhere in the output.
-- Structure output clearly and accurately.
-- Always reflect the role's perspective if provided.
-- Recheck for at least 99% accuracy before replying.
+
+1. Never fabricate, assume, or generalize any information.
+2. Never reframe non-meeting content as a meeting.
+3. You MUST use only the language and tone provided.
+4. Use concise, plain text (no markdown formatting).
+5. Do not use ** or any stylized formatting.
+6. Structure output clearly and accurately.
+7. Always reflect the role’s perspective if provided.
+8. Recheck for at least 99% accuracy before replying.
 
 
 Text to summarize:
