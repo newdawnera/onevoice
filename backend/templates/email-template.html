@@ -38,8 +38,6 @@
     <![endif]-->
     <title>[EMAIL_SUBJECT]</title>
     <style>
-      /* Tailwind CSS classes can't be used directly in most email clients, but this gives a preview */
-      /* This is a basic reset */
       .hover-underline:hover {
         text-decoration: underline !important;
       }
@@ -69,7 +67,6 @@
       background-color: #f3f4f6;
     "
   >
-    <!-- Preheader text for email preview -->
     <div style="display: none">[PREHEADER_TEXT]</div>
     <div
       role="article"
@@ -92,7 +89,6 @@
               padding-bottom: 24px;
             "
           >
-            <!-- Main email container -->
             <table
               class="sm-w-full"
               style="width: 600px"
@@ -112,7 +108,6 @@
                       0 4px 6px -2px rgba(0, 0, 0, 0.05);
                   "
                 >
-                  <!-- Header Section -->
                   <table
                     style="width: 100%"
                     cellpadding="0"
@@ -153,7 +148,6 @@
                     </tr>
                   </table>
 
-                  <!-- Body Content Section -->
                   <table
                     style="width: 100%"
                     cellpadding="0"
@@ -169,18 +163,12 @@
                             font-size: 16px;
                           "
                         >
-                          <!-- 
-                          YOUR DYNAMIC HTML CONTENT GOES HERE.
-                          This is where the output from your Quill editor (the meeting summary or transcript) will be injected.
-                          The HTML from your `formatted_result` variable in Python can be placed directly here.
-                        -->
                           [MAIN_CONTENT_HTML]
                         </div>
                       </td>
                     </tr>
                   </table>
 
-                  <!-- Button Section (Optional) -->
                   <table
                     style="width: 100%"
                     cellpadding="0"
@@ -192,7 +180,6 @@
                         align="center"
                         style="padding-top: 16px; padding-bottom: 16px"
                       >
-                        <!-- You can link this button to your web app or another relevant URL -->
                         <a
                           href="[MY_URL]"
                           style="
@@ -213,7 +200,6 @@
                     </tr>
                   </table>
 
-                  <!-- Footer Section -->
                   <table
                     style="width: 100%"
                     cellpadding="0"

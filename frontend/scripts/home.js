@@ -33,7 +33,7 @@ const App = (() => {
 
   let quill, inputQuill, emailQuill;
   let transcriptionAbortController;
-  let systemMediaRecorder, micMediaRecorder;
+  let mixedMediaRecorder;
   let systemStream, micStreamForSystem;
   let recognition;
   let currentResizableImage = null;
@@ -1165,7 +1165,7 @@ const App = (() => {
         e.data.size > 0 && chunks.push(e.data);
       mediaRecorder.start();
 
-      micMediaRecorder = mediaRecorder;
+      mixedMediaRecorder = mediaRecorder;
 
       mediaRecorder.onstop = async () => {
         const audioBlob = new Blob(chunks, { type: "audio/webm" });
@@ -1225,8 +1225,7 @@ const App = (() => {
   }
 
   function stopSystemAudioRecording(isCleanup = false) {
-    if (systemMediaRecorder?.state === "recording") systemMediaRecorder.stop();
-    if (micMediaRecorder?.state === "recording") micMediaRecorder.stop();
+    if (mixedMediaRecorder?.state === "recording") mixedMediaRecorder.stop();
     systemStream?.getTracks().forEach((track) => track.stop());
     micStreamForSystem?.getTracks().forEach((track) => track.stop());
     systemStream = micStreamForSystem = null;
@@ -1835,17 +1834,23 @@ const App = (() => {
       showAlert("Editor instance not available for copying.", "danger");
       return;
     }
+
     const html = quillInstance.root.innerHTML;
     const text = quillInstance.getText();
-    const listener = function (e) {
-      e.clipboardData.setData("text/html", html);
-      e.clipboardData.setData("text/plain", text);
-      e.preventDefault();
-    };
-    document.addEventListener("copy", listener);
-    document.execCommand("copy");
-    document.removeEventListener("copy", listener);
-    showAlert("Copied to clipboard!", "success");
+
+    const clipboardItem = new ClipboardItem({
+      "text/plain": new Blob([text], { type: "text/plain" }),
+      "text/html": new Blob([html], { type: "text/html" }),
+    });
+
+    navigator.clipboard
+      .write([clipboardItem])
+      .then(() => {
+        showAlert("Copied to clipboard!", "success");
+      })
+      .catch(() => {
+        showAlert("Failed to copy content.", "danger");
+      });
   }
 
   return {

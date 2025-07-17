@@ -1,5 +1,5 @@
 
-# This file contains all the API endpoints for the app.
+
 import os
 import json
 import base64
@@ -19,40 +19,7 @@ import config
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# @router.post("/transcribe/", summary="Transcribe Audio/Video File(s)")
-# async def transcribe_endpoint(
-#     user_audio: UploadFile = File(None),
-#     system_audio: UploadFile = File(None),
-#     file: UploadFile = File(None),
-#     language: str = Form(None)
-# ):
-#     if file:
-#         transcription = await utils.transcribe_audio_file_simple(file, language)
-#         return {"transcription": transcription}
 
-#     if not user_audio and not system_audio:
-#         raise HTTPException(status_code=400, detail="No audio files provided.")
-
-#     tasks = []
-#     if user_audio: tasks.append(utils.transcribe_to_segments(user_audio, language))
-#     if system_audio: tasks.append(utils.transcribe_to_segments(system_audio, language))
-    
-#     transcription_results = await asyncio.gather(*tasks)
-
-#     all_segments = []
-#     result_index = 0
-#     if user_audio:
-#         for seg in transcription_results[result_index]: seg['source'] = 'Speaker 1'
-#         all_segments.extend(transcription_results[result_index])
-#         result_index += 1
-#     if system_audio:
-#         for seg in transcription_results[result_index]: seg['source'] = 'Speaker 2'
-#         all_segments.extend(transcription_results[result_index])
-
-#     all_segments.sort(key=lambda x: x['start'])
-#     raw_transcript = "\n".join([f"{s['source'].capitalize()}: {s['text'].strip()}" for s in all_segments])
-
-#     return {"transcription": raw_transcript}
 
 @router.post("/transcribe/", summary="Transcribe Audio/Video File")
 async def transcribe_endpoint(
@@ -68,7 +35,7 @@ async def transcribe_endpoint(
 
 
 @router.post("/upload-document/", summary="Upload and Process a Document")
-async def upload_document_endpoint(file: UploadFile = File(...), language: str = Form(None)):
+async def upload_document_endpoint(file: UploadFile = File(...)):
     logger.info(f"Processing document '{file.filename}'")
     text_content = await utils.read_text_from_file(file)
     return {"text": text_content}
@@ -95,7 +62,7 @@ Generate a concise, well-organized meeting summary using these standard headings
 - Prioritize discussions, risks, actions, or decisions that directly impact or concern the {perspective_role}.
 - Minimize or omit unrelated content unless it directly affects the {perspective_role}.
 
-Standard headings:
+Standard headings (Headings and content MUST be in the original language of the document - Do not translate headings or content):
 1. Meeting Details (date, time, platform, facilitator, note taker if provided)
 2. Attendees (list participants; include absentees if mentioned)
 3. Agenda (pre-set or inferred topics)
@@ -133,8 +100,8 @@ Text to summarize:
     email_subject = email_subject_raw.strip().replace('"', '')
 
     final_summary = summary
-    if request.target_language and request.target_language != "No Translation" and request.target_language != "Original":
-    # If yes, create the translation prompt and call the API
+    if request.target_language and request.target_language != "No Translation":
+    
         translation_prompt = f"Translate the following text into {request.target_language}. Provide only the translated text, without any additional titles or explanations.\n\nText:\n---\n{summary}"
         final_summary = await utils.generate_gemini_content(translation_prompt)
     else:

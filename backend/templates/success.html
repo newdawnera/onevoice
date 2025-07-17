@@ -49,14 +49,7 @@
   </body>
 </html>
 <script>
-  // Automatically close the window after 5 seconds
   setTimeout(() => {
     window.close();
   }, 5000);
-</script>
-<script>
-  // Ensure the window is closed if the user tries to navigate away
-  window.onbeforeunload = function () {
-    return "Are you sure you want to close this window?";
-  };
 </script>
