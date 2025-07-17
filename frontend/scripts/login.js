@@ -16,7 +16,7 @@ const errorMessageDiv = document.getElementById("error-message");
 const successMessageDiv = document.getElementById("success-message");
 const forgotPasswordLink = document.getElementById("forgot-password-link");
 
-// Modal Elements
+
 const resetModal = document.getElementById("reset-modal");
 const resetEmailInput = document.getElementById("reset-email-input");
 const cancelResetBtn = document.getElementById("cancel-reset-btn");
@@ -45,9 +45,7 @@ loginForm.addEventListener("submit", async (e) => {
       email,
       password
     );
-    const user = userCredential.user;
 
-    // console.log("Successfully logged in:", user.uid);
 
     showSuccess("Login successful! Redirecting...");
 

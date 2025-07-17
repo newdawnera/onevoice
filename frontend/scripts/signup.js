@@ -81,7 +81,6 @@ signupForm.addEventListener("submit", async (e) => {
   }
 });
 
-// Function to show an error message on the page
 function displayErrorMsg(message) {
   errorDiv.textContent = message;
   errorDiv.style.display = "block";
@@ -90,7 +89,6 @@ function displayErrorMsg(message) {
   signupBtn.textContent = "Sign Up";
 }
 
-// shows the green success popup
 function displaySuccessMsg(message) {
   successDiv.textContent = message;
   successDiv.classList.remove("hidden");

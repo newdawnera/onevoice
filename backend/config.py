@@ -47,13 +47,12 @@ def setup_gemini_api():
         print(f"Error configuring Gemini API: {e}")
 
 
-# config.py
-
+# just so i load the html files for the emails, this funciton wil be used
 def load_html_templates():
     
     global welcome_template, email_template, reminder_template, success_template
     
-    # Use reliable paths relative to the config.py file
+ 
     base_path = os.path.dirname(__file__)
 
     try:

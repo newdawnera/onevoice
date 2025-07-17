@@ -1,11 +1,8 @@
 
 fastapi[all]
-uvicorn
 python-dotenv
 google-generativeai
 assemblyai
-torch
-transformers
 pypdf
 python-docx
 beautifulsoup4
