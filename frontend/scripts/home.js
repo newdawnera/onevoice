@@ -9,7 +9,7 @@ import {
 
 const App = (() => {
   const MY_API = "https://ally-backend-y2pq.onrender.com";
-  let db, auth, currentUser;
+  let db, currentUser;
 
   const state = {
     currentPage: 1,
@@ -35,7 +35,9 @@ const App = (() => {
   let transcriptionAbortController;
   let mixedMediaRecorder;
   let systemStream, micStreamForSystem;
-  let recognition;
+  let micRecorder = null;
+  let micStream = null;
+  let recordingLoaderIndex = null;
   let currentResizableImage = null;
 
   const el = {};
@@ -123,7 +125,7 @@ const App = (() => {
   let fileStore = new DataTransfer();
 
   const api = {
-    async _fetch(endpoint, options) {
+    async handleReq(endpoint, options) {
       try {
         const response = await fetch(`${MY_API}${endpoint}`, options);
         if (!response.ok) {
@@ -140,35 +142,35 @@ const App = (() => {
       }
     },
     transcribe(formData, signal) {
-      return this._fetch("/transcribe/", {
+      return this.handleReq("/transcribe/", {
         method: "POST",
         body: formData,
         signal,
       });
     },
     uploadDocument(formData, signal) {
-      return this._fetch("/upload-document/", {
+      return this.handleReq("/upload-document/", {
         method: "POST",
         body: formData,
         signal,
       });
     },
     generateResult(data) {
-      return this._fetch("/generate-result/", {
+      return this.handleReq("/generate-result/", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
     },
     sendEmail(formData) {
-      return this._fetch("/send-email/", {
+      return this.handleReq("/send-email/", {
         method: "POST",
         body: formData,
       });
     },
 
     aiHelper(task_type, context, is_json = false) {
-      return this._fetch("/ai-helper", {
+      return this.handleReq("/ai-helper", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ task_type, context, is_json }),
@@ -632,7 +634,6 @@ const App = (() => {
 
     loadStateFromLocalStorage();
 
-    initSpeechRecognition();
     setupEventListeners();
 
     const languages = {
@@ -829,97 +830,6 @@ const App = (() => {
       theme: "snow",
       placeholder: "Email content will be shown here...",
     });
-  }
-
-  function initSpeechRecognition() {
-    const SpeechRecognition =
-      window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      el.speechToTextContainer.innerHTML =
-        '<p class="text-sm text-red-500">Speech recognition is not supported by your browser.</p>';
-      return;
-    }
-
-    recognition = new SpeechRecognition();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    let dictationStartIndex = 0;
-    let currentDictationLength = 0;
-
-    recognition.onstart = function () {
-      state.isDictating = true;
-      el.recordBtn.innerHTML = ICONS.MIC_OFF;
-      el.recordingIndicator.classList.remove("hidden");
-      el.recordSystemBtn.disabled = true;
-      const editorLength = inputQuill.getLength();
-      if (editorLength > 1 && inputQuill.getText(editorLength - 2, 1) !== " ") {
-        inputQuill.insertText(editorLength - 1, " ", "user");
-      }
-      dictationStartIndex = inputQuill.getLength() - 1;
-      currentDictationLength = 0;
-    };
-
-    recognition.onresult = function (event) {
-      let finalTranscript = "";
-      let interimTranscript = "";
-      for (let i = event.resultIndex; i < event.results.length; ++i) {
-        const transcript = event.results[i][0].transcript;
-        if (event.results[i].isFinal) finalTranscript += transcript;
-        else interimTranscript += transcript;
-      }
-      const Delta = Quill.import("delta");
-      const delta = new Delta()
-        .retain(dictationStartIndex)
-        .delete(currentDictationLength)
-        .insert(finalTranscript + interimTranscript);
-      inputQuill.updateContents(delta, "user");
-      currentDictationLength = (finalTranscript + interimTranscript).length;
-      if (finalTranscript) {
-        dictationStartIndex += finalTranscript.length;
-        currentDictationLength -= finalTranscript.length;
-      }
-    };
-
-    recognition.onend = function () {
-      if (state.isDictating) {
-        try {
-          recognition.lang = state.transcriptionLanguage;
-          recognition.start();
-        } catch (e) {
-          state.isDictating = false;
-          el.recordBtn.innerHTML = ICONS.MIC_ON;
-          el.recordingIndicator.classList.add("hidden");
-          el.recordSystemBtn.disabled = false;
-          showAlert("Dictation stopped.", "info");
-        }
-      } else {
-        el.recordBtn.innerHTML = ICONS.MIC_ON;
-        el.recordingIndicator.classList.add("hidden");
-        el.recordSystemBtn.disabled = false;
-      }
-    };
-
-    recognition.onerror = function (event) {
-      console.error("SpeechRecognition error:", event.error);
-      let errorMessage = "Speech recognition error: " + event.error;
-      if (
-        event.error === "not-allowed" ||
-        event.error === "service-not-allowed"
-      ) {
-        errorMessage =
-          "Microphone access was denied. Please allow microphone access in your browser settings.";
-      } else if (event.error === "no-speech") {
-        return;
-      } else if (event.error === "audio-capture") {
-        errorMessage =
-          "Microphone not available. Another application might be using it.";
-      }
-      showAlert(errorMessage, "danger");
-      state.isDictating = false;
-      el.recordBtn.innerHTML = ICONS.MIC_ON;
-      el.recordingIndicator.classList.add("hidden");
-      el.recordSystemBtn.disabled = false;
-    };
   }
 
   function setupEventListeners() {
@@ -1239,6 +1149,120 @@ const App = (() => {
       el.recordSystemBtn.classList.remove("bg-red-600");
       el.includeMicCheckbox.disabled = false;
     }
+  }
+
+  async function startMicRecording() {
+    if (state.isRecordingMedia) {
+      showAlert(
+        "Please stop media recording before starting dictation.",
+        "info"
+      );
+      return;
+    }
+
+    // A "Delta" is Quill's way of representing changes to its content.
+    const Delta = Quill.import("delta");
+    // Get the total length of the content currently in the editor.
+    const editorLength = inputQuill.getLength();
+    recordingLoaderIndex = editorLength;
+
+    inputQuill.updateContents(
+      new Delta()
+        .retain(editorLength - 1)
+        .insert("\n")
+        .insert({ loader: "Recording... Click the microphone to stop." }),
+      "api"
+    );
+
+    inputQuill.scroller.scrollTop = inputQuill.scroller.scrollHeight;
+
+    try {
+      micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      state.isDictating = true;
+      el.recordBtn.innerHTML = ICONS.MIC_OFF;
+      el.recordingIndicator.classList.remove("hidden");
+      el.recordSystemBtn.disabled = true;
+
+      const audioChunks = [];
+
+      micRecorder = new MediaRecorder(micStream, {
+        mimeType: "audio/webm;codecs=opus",
+      });
+
+      micRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunks.push(event.data);
+        }
+      };
+
+      micRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
+
+        inputQuill.updateContents(
+          new Delta()
+            .retain(recordingLoaderIndex - 1)
+            .delete(1)
+            .insert({ loader: "Transcribing your dictation..." }),
+          "api"
+        );
+
+        const formData = new FormData();
+        formData.append("file", audioBlob, "dictation.webm");
+
+        try {
+          const data = await api.transcribe(formData);
+          const newText = data.transcription || "";
+
+          inputQuill.updateContents(
+            new Delta()
+              .retain(recordingLoaderIndex - 1)
+              .delete(1)
+              .insert(newText ? newText.trim() + "\n" : ""),
+            "api"
+          );
+          showAlert("Dictation transcribed successfully!", "success");
+        } catch (error) {
+          inputQuill.updateContents(
+            new Delta().retain(recordingLoaderIndex - 1).delete(1),
+            "api"
+          );
+        } finally {
+          recordingLoaderIndex = null;
+        }
+      };
+
+      micRecorder.start();
+    } catch (err) {
+      console.error("Microphone access error:", err);
+      showAlert(
+        "Could not access microphone. Please grant permission in your browser settings.",
+        "danger"
+      );
+
+      if (recordingLoaderIndex) {
+        inputQuill.updateContents(
+          new Delta().retain(recordingLoaderIndex - 1).delete(1),
+          "api"
+        );
+        recordingLoaderIndex = null;
+      }
+      stopMicRecording();
+    }
+  }
+
+  function stopMicRecording() {
+    if (micRecorder && micRecorder.state === "recording") {
+      micRecorder.stop();
+    }
+
+    micStream?.getTracks().forEach((track) => track.stop());
+    micStream = null;
+
+    state.isDictating = false;
+    el.recordBtn.innerHTML = ICONS.MIC_ON;
+    el.recordingIndicator.classList.add("hidden");
+    el.recordSystemBtn.disabled = false;
   }
 
   function showSuggestions() {
