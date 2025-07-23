@@ -1163,7 +1163,7 @@ const App = (() => {
       "api"
     );
 
-    inputQuill.scroller.scrollTop = inputQuill.scroller.scrollHeight;
+    inputQuill.root.scrollTop = inputQuill.root.scrollHeight;
 
     try {
       micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -1198,6 +1198,8 @@ const App = (() => {
 
         const formData = new FormData();
         formData.append("file", audioBlob, "dictation.webm");
+
+        transcriptionAbortController = new AbortController();
 
         try {
           const data = await api.transcribe(formData);
