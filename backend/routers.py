@@ -161,16 +161,20 @@ async def ai_helper_endpoint(request: AiHelperRequest):
         {request.context.get('text')}"""
 
     elif request.task_type == "extract_actions":
+        
+        current_year = datetime.now().year
+
         prompt = f"""From the following meeting summary, extract all action items.
         Your response MUST be a valid JSON array of objects.
         Each object should have 'task', 'assignee', 'assigneeEmail', 'startDate', and 'deadline' keys.
         **Crucially, any date found for 'startDate' and 'deadline' MUST be formatted as 'yyyy-mm-dd'.**
-        If a value is not mentioned, set it to null. If no person is assigned, set assignee to 'Unassigned' and assigneeEmail to null.
+
+        IMPORTANT DATE RULE: If a year is not explicitly mentioned for a date in the text, you MUST assume the year is {current_year}. Do not use any other year. For example, if the text says 'the deadline is March 5th', you must format it as '{current_year}-03-05'.
+
+        If a value for a key is not mentioned, set it to null.
+        If no person is assigned, set assignee to 'Unassigned' and assigneeEmail to null.
         The language of the action items should be the same as the language of the summary.
-        If the year is not mentioned, use the current year.
-        But all dates must be in English format (yyyy-mm-dd).
         If no action items are found, return an empty array.
-        Do not insinuate a task if it is not explicitly mentioned in the text.
         Do not fabricate or assume details. Recheck for 99% accuracy.
 
         Summary:
