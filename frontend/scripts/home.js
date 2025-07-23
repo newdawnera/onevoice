@@ -1190,7 +1190,7 @@ const App = (() => {
 
         inputQuill.updateContents(
           new Delta()
-            .retain(recordingLoaderIndex - 1)
+            .retain(recordingLoaderIndex)
             .delete(1)
             .insert({ loader: "Transcribing your dictation..." }),
           "api"
@@ -1207,7 +1207,7 @@ const App = (() => {
 
           inputQuill.updateContents(
             new Delta()
-              .retain(recordingLoaderIndex - 1)
+              .retain(recordingLoaderIndex)
               .delete(1)
               .insert(newText ? newText.trim() + "\n" : ""),
             "api"
@@ -1215,7 +1215,7 @@ const App = (() => {
           showAlert("Dictation transcribed successfully!", "success");
         } catch (error) {
           inputQuill.updateContents(
-            new Delta().retain(recordingLoaderIndex - 1).delete(1),
+            new Delta().retain(recordingLoaderIndex).delete(1),
             "api"
           );
         } finally {
