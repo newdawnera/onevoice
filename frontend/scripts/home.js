@@ -914,25 +914,14 @@ const App = (() => {
       }
     });
 
-    if (recognition) {
-      el.recordBtn.addEventListener("click", () => {
-        if (state.isDictating) {
-          state.isDictating = false;
-          recognition.stop();
-        } else if (!state.isRecordingMedia) {
-          try {
-            recognition.lang = state.transcriptionLanguage;
+    el.recordBtn.addEventListener("click", () => {
+      if (state.isDictating) {
+        stopMicRecording();
+      } else {
+        startMicRecording();
+      }
+    });
 
-            recognition.start();
-          } catch (e) {
-            showAlert(
-              "Could not start recording. Please wait and try again.",
-              "danger"
-            );
-          }
-        }
-      });
-    }
     el.recordSystemBtn.addEventListener("click", () => {
       if (state.isRecordingMedia) stopSystemAudioRecording();
       else handleSystemAudioRecord();
