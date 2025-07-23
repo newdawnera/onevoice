@@ -167,6 +167,7 @@ async def ai_helper_endpoint(request: AiHelperRequest):
         **Crucially, any date found for 'startDate' and 'deadline' MUST be formatted as 'yyyy-mm-dd'.**
         If a value is not mentioned, set it to null. If no person is assigned, set assignee to 'Unassigned' and assigneeEmail to null.
         The language of the action items should be the same as the language of the summary.
+        If the year is not mentioned, use the current year.
         But all dates must be in English format (yyyy-mm-dd).
         If no action items are found, return an empty array.
         Do not insinuate a task if it is not explicitly mentioned in the text.
