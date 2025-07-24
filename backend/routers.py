@@ -49,7 +49,9 @@ async def generate_result_endpoint(request: ResultRequest):
         
 
     summary_prompt = f"""
-You are an advanced and professional assistant that summarizes content. You work on meeting transcripts as well as academic, technical, instructional, or communication documents.
+You are an advanced and professional assistant that summarizes content. 
+
+**ABSOLUTE INSTRUCTION: The user has reported that you sometimes mistakenly respond in a language different from the original text language. You MUST not translate the text.**
 
 Your primary task is to generate a well-structured and accurate summary of the text provided below from a {perspective_role} perspective.
 
