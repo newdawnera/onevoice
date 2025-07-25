@@ -195,6 +195,29 @@ const App = (() => {
     setTimeout(() => document.getElementById(tempId)?.remove(), 5000);
   }
 
+  function toggleCoreUI(shouldBeEnabled) {
+    if (inputQuill) {
+      inputQuill.enable(shouldBeEnabled);
+    }
+
+    const elementsToToggle = [
+      el.fileUpload,
+      el.recordSystemBtn,
+      el.unifiedLanguageSelect,
+      el.nextBtn1,
+      el.autocompleteToggle,
+      el.detectTopicsBtn,
+      el.transcriptQaQuestionInput,
+      el.transcriptQaAskBtn,
+    ];
+
+    elementsToToggle.forEach((element) => {
+      if (element) {
+        element.disabled = !shouldBeEnabled;
+      }
+    });
+  }
+
   function saveStateToLocalStorage() {
     if (!currentUser || !currentUser.uid) return;
     const stateToSave = {
@@ -1015,6 +1038,19 @@ const App = (() => {
         }
       }
 
+      const Delta = Quill.import("delta");
+      const editorLength = inputQuill.getLength();
+      recordingLoaderIndex = editorLength; // Use the global index
+
+      inputQuill.updateContents(
+        new Delta()
+          .retain(editorLength - 1)
+          .insert("\n")
+          .insert({ loader: "Recording screen and audio..." }),
+        "api"
+      );
+      inputQuill.root.scrollTop = inputQuill.root.scrollHeight;
+
       const audioContext = new AudioContext();
       const destination = audioContext.createMediaStreamDestination();
       let hasAudio = false;
@@ -1049,6 +1085,8 @@ const App = (() => {
         if (state.isRecordingMedia) stopSystemAudioRecording();
       });
 
+      toggleCoreUI(false);
+
       state.isRecordingMedia = true;
       el.recordBtn.disabled = true;
       el.systemRecordingIndicator.classList.remove("hidden");
@@ -1070,12 +1108,10 @@ const App = (() => {
       mediaRecorder.onstop = async () => {
         const audioBlob = new Blob(chunks, { type: "audio/webm" });
 
-        const Delta = Quill.import("delta");
-        const loaderIndex = inputQuill.getLength();
         inputQuill.updateContents(
           new Delta()
-            .retain(loaderIndex - 1)
-            .insert("\n")
+            .retain(recordingLoaderIndex)
+            .delete(1)
             .insert({ loader: "Transcribing recorded media..." }),
           "api"
         );
@@ -1091,23 +1127,27 @@ const App = (() => {
             transcriptionAbortController.signal
           );
           const newText = data.transcription || "";
+
           inputQuill.updateContents(
             new Delta()
-              .retain(loaderIndex)
+              .retain(recordingLoaderIndex)
               .delete(1)
               .insert(newText ? newText.trim() + "\n" : ""),
             "api"
           );
+
           state.sourceText = inputQuill.root.innerHTML;
           updateUI();
           if (newText) showAlert("Media transcribed successfully!", "success");
         } catch (error) {
           if (error.name !== "AbortError") {
             inputQuill.updateContents(
-              new Delta().retain(loaderIndex).delete(1),
+              new Delta().retain(recordingLoaderIndex).delete(1),
               "api"
             );
           }
+        } finally {
+          recordingLoaderIndex = null;
         }
       };
     } catch (err) {
@@ -1130,6 +1170,8 @@ const App = (() => {
     micStreamForSystem?.getTracks().forEach((track) => track.stop());
     systemStream = micStreamForSystem = null;
 
+    toggleCoreUI(true);
+
     if (state.isRecordingMedia || isCleanup) {
       state.isRecordingMedia = false;
       el.recordBtn.disabled = false;
@@ -1149,32 +1191,31 @@ const App = (() => {
       return;
     }
 
-    // A "Delta" is Quill's way of representing changes to its content.
-    const Delta = Quill.import("delta");
-    // Get the total length of the content currently in the editor.
-    const editorLength = inputQuill.getLength();
-    recordingLoaderIndex = editorLength;
-
-    inputQuill.updateContents(
-      new Delta()
-        .retain(editorLength - 1)
-        .insert("\n")
-        .insert({ loader: "Recording... Click the microphone to stop." }),
-      "api"
-    );
-
-    inputQuill.root.scrollTop = inputQuill.root.scrollHeight;
-
     try {
+      // We ask for microphone permission FIRST.
       micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
+      // tehn, if permission is granted, NOW update the UI and show the loader.
+
+      const Delta = Quill.import("delta");
+      const editorLength = inputQuill.getLength();
+      recordingLoaderIndex = editorLength;
+
+      inputQuill.updateContents(
+        new Delta()
+          .retain(editorLength - 1)
+          .insert("\n")
+          .insert({ loader: "Recording... Click the microphone to stop." }),
+        "api"
+      );
+      inputQuill.root.scrollTop = inputQuill.root.scrollHeight;
+
+      toggleCoreUI(false);
       state.isDictating = true;
       el.recordBtn.innerHTML = ICONS.MIC_OFF;
       el.recordingIndicator.classList.remove("hidden");
-      el.recordSystemBtn.disabled = true;
 
       const audioChunks = [];
-
       micRecorder = new MediaRecorder(micStream, {
         mimeType: "audio/webm;codecs=opus",
       });
@@ -1198,11 +1239,13 @@ const App = (() => {
 
         const formData = new FormData();
         formData.append("file", audioBlob, "dictation.webm");
-
         transcriptionAbortController = new AbortController();
 
         try {
-          const data = await api.transcribe(formData);
+          const data = await api.transcribe(
+            formData,
+            transcriptionAbortController.signal
+          );
           const newText = data.transcription || "";
 
           inputQuill.updateContents(
@@ -1214,10 +1257,12 @@ const App = (() => {
           );
           showAlert("Dictation transcribed successfully!", "success");
         } catch (error) {
-          inputQuill.updateContents(
-            new Delta().retain(recordingLoaderIndex).delete(1),
-            "api"
-          );
+          if (error.name !== "AbortError") {
+            inputQuill.updateContents(
+              new Delta().retain(recordingLoaderIndex).delete(1),
+              "api"
+            );
+          }
         } finally {
           recordingLoaderIndex = null;
         }
@@ -1230,14 +1275,6 @@ const App = (() => {
         "Could not access microphone. Please grant permission in your browser settings.",
         "danger"
       );
-
-      if (recordingLoaderIndex) {
-        inputQuill.updateContents(
-          new Delta().retain(recordingLoaderIndex - 1).delete(1),
-          "api"
-        );
-        recordingLoaderIndex = null;
-      }
       stopMicRecording();
     }
   }
@@ -1250,10 +1287,10 @@ const App = (() => {
     micStream?.getTracks().forEach((track) => track.stop());
     micStream = null;
 
+    toggleCoreUI(true);
     state.isDictating = false;
     el.recordBtn.innerHTML = ICONS.MIC_ON;
     el.recordingIndicator.classList.add("hidden");
-    el.recordSystemBtn.disabled = false;
   }
 
   function showSuggestions() {
@@ -1431,7 +1468,7 @@ const App = (() => {
       state.emailContentSource === "transcript"
         ? state.fileName
           ? `Transcript: ${state.fileName}`
-          : "Meeting Transcript"
+          : "Ally - Transcript"
         : state.emailSubject || "AI Wizard Result";
 
     emailQuill.setContents(sourceQuill.getContents());
