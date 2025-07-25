@@ -7,12 +7,38 @@ import {
 
 const historyPageLogic = (user, db) => {
   let unsubscribeFromHistory = null;
+  let allHistoryItems = [];
 
   const elements = {
     historyList: document.getElementById("history-list"),
     loadingSpinner: document.getElementById("loading-spinner"),
     emptyState: document.getElementById("empty-state"),
+    searchInput: document.getElementById("search-input"),
   };
+
+  function applySearchFilter() {
+    const searchTerm = elements.searchInput.value.toLowerCase();
+
+    if (!searchTerm) {
+      renderHistory(allHistoryItems);
+      return;
+    }
+
+    const filteredItems = allHistoryItems.filter((item) => {
+      const transcriptMatch = item.transcript
+        ?.toLowerCase()
+        .includes(searchTerm);
+      const summaryMatch = item.summary?.toLowerCase().includes(searchTerm);
+      const actionLogMatch = item.actionLogs?.some(
+        (log) =>
+          log.task?.toLowerCase().includes(searchTerm) ||
+          log.assignee?.toLowerCase().includes(searchTerm)
+      );
+      return transcriptMatch || summaryMatch || actionLogMatch;
+    });
+
+    renderHistory(filteredItems);
+  }
 
   function formatTimestamp(timestamp) {
     if (!timestamp || !timestamp.toDate) return "Date not available";
@@ -116,11 +142,13 @@ const historyPageLogic = (user, db) => {
         querySnapshot.forEach((doc) => {
           historyItems.push({ id: doc.id, ...doc.data() });
         });
-        historyItems.sort(
+
+        allHistoryItems = historyItems.sort(
           (a, b) =>
             (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0)
         );
-        renderHistory(historyItems);
+
+        applySearchFilter();
       },
       (error) => {
         console.error("Error fetching history:", error);
@@ -130,7 +158,7 @@ const historyPageLogic = (user, db) => {
       }
     );
   }
-
+  elements.searchInput.addEventListener("input", applySearchFilter);
   fetchHistory();
 };
 
