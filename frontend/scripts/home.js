@@ -1216,8 +1216,23 @@ const App = (() => {
       el.recordingIndicator.classList.remove("hidden");
 
       const audioChunks = [];
+
+      const mimeTypes = ["audio/webm;codecs=opus", "audio/mp4", "audio/webm"];
+      const supportedMimeType = mimeTypes.find((type) =>
+        MediaRecorder.isTypeSupported(type)
+      );
+
+      if (!supportedMimeType) {
+        showAlert(
+          "Your browser does not support the required audio recording formats.",
+          "danger"
+        );
+        stopMicRecording();
+        return;
+      }
+
       micRecorder = new MediaRecorder(micStream, {
-        mimeType: "audio/webm;codecs=opus",
+        mimeType: supportedMimeType,
       });
 
       micRecorder.ondataavailable = (event) => {
