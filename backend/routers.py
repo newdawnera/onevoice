@@ -86,7 +86,7 @@ General Rules:
 - Role Handling: If the selected role ({perspective_role}) is not mentioned or discussed in the document, explicitly state that the role was not part of the conversation (in the source language). Then provide a general overview, highlighting only points that might indirectly affect the {perspective_role}.
 - Accuracy: Never fabricate, assume, or generalize information not present in the text. Recheck your output for at least 99% accuracy before replying.
 - Tone and Language: Use only the language and tone provided in the original document.
-- Formatting: Use concise, plain text. Do not use markdown formatting like ``.
+- Formatting: Use concise, plain text. Do not use markdown formatting like `` and **.
 - Structure: Structure the output clearly and accurately. Do not reframe non-meeting content as a meeting.
 
 
@@ -132,7 +132,8 @@ Text to summarize:
 @router.post("/ai-helper", summary="Generic AI Helper")
 async def ai_helper_endpoint(request: AiHelperRequest):
     prompt = "" 
-    
+    task_requires_json = request.task_type in ["extract_actions", "detect_topics"]
+
     if request.task_type == "autocomplete":
         prompt = f"""You are an intelligent auto-completion AI. Continue the following text in a natural and helpful way.
         Provide only the continuation, without repeating the original text. The continuation should be a few words or a short phrase.
@@ -186,14 +187,15 @@ async def ai_helper_endpoint(request: AiHelperRequest):
     else:
         raise HTTPException(status_code=400, detail="Invalid task_type specified.")
     
-    response_text = await utils.generate_groq_content(prompt, model_name="llama3-70b-8192", is_json=request.is_json)
-    if request.is_json:
+    response_text = await utils.generate_groq_content(prompt, model_name="llama3-70b-8192", is_json=task_requires_json)
+    if task_requires_json:
+        cleaned_json_string = response_text.strip().replace("```json", "").replace("```", "")
         try:
-            return json.loads(response_text)
+            return json.loads(cleaned_json_string)
         except json.JSONDecodeError:
-            
-            logger.error(f"Groq returned invalid JSON despite forced JSON mode: {response_text}")
-            raise HTTPException(status_code=500, detail="AI failed to generate valid JSON.")
+            raise HTTPException(status_code=500, detail="AI returned invalid JSON.")
+    else:
+        return {"text": response_text}
 
 @router.post("/send-email/", summary="Send Email via Brevo with Attachments")
 async def send_email_endpoint(
