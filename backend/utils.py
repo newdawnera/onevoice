@@ -12,6 +12,7 @@ import assemblyai as aai
 from datetime import datetime
 import config
 import google.generativeai as genai
+from langdetect import detect, LangDetectException
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +98,52 @@ async def generate_gemini_content(prompt: str, model_name: str = "gemini-1.5-fla
     except Exception as e:
         logger.error(f"Gemini API call failed: {e}")
         raise HTTPException(status_code=500, detail=f"AI content generation failed: {e}")
+
+
+#This checks if the summary language matches the original text language.
+#If not, it translates the summary to the correct language.
+async def correct_summary_language(original_text: str, summary_text: str) -> str:
+    
+    try:
+       
+        try:
+            
+            original_lang = detect(original_text[:1000])
+        except LangDetectException:
+            logger.warning("Could not detect language of original text. Skipping correction.")
+            return summary_text
+            
+        try:
+            summary_lang = detect(summary_text)
+        except LangDetectException:
+            logger.warning("Could not detect language of summary. Skipping correction.")
+            return summary_text
+
+        logger.info(f"Detected original language: {original_lang}, Detected summary language: {summary_lang}")
+
+        
+        if original_lang != summary_lang:
+            logger.warning(f"Language mismatch detected. Translating summary from '{summary_lang}' to '{original_lang}'.")
+            
+            correction_prompt = f"""Translate the following text into the language with the ISO 639-1 code '{original_lang}'.
+                Provide ONLY the translated text. Do not add any interpretation or assumption
+
+                Text to translate:
+                ---
+                {summary_text}
+                ---
+                """
+            
+            corrected_summary = await generate_gemini_content(correction_prompt)
+            return corrected_summary
+        else:
+            
+            return summary_text
+
+    except Exception as e:
+        logger.error(f"An unexpected error occurred during language correction: {e}")
+        # In case of any other error, it's safer to return the original summary
+        return summary_text
 
 
 async def send_email_via_brevo(recipient_email, subject, html_content, sender_name="AI Meeting Wizard"):

@@ -98,8 +98,8 @@ Text to summarize:
 """ 
     email_subject_prompt = f"Based on the following text, generate a very concise and relevant email subject line, no more than 8-10 words. Output ONLY the subject line itself, with no extra text or quotation marks.\n\nText:\n---\n{request.text}"
 
-    summary = await utils.generate_gemini_content(summary_prompt)
-    await asyncio.sleep(1)
+    initial_summary = await utils.generate_gemini_content(summary_prompt)
+    summary = await utils.correct_summary_language(request.text, initial_summary)
     email_subject_raw = await utils.generate_gemini_content(email_subject_prompt)
     email_subject = email_subject_raw.strip().replace('"', '')
 
