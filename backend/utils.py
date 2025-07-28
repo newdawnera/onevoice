@@ -126,7 +126,7 @@ async def correct_summary_language(original_text: str, summary_text: str) -> str
             logger.warning(f"Language mismatch detected. Translating summary from '{summary_lang}' to '{original_lang}'.")
             
             correction_prompt = f"""Translate the following text into the language with the ISO 639-1 code '{original_lang}'.
-                Provide ONLY the translated text. Do not add any interpretation or assumption
+                Maintain the Structure of the text. Do not add any interpretation or assumption. Provide ONLY the translated text.
 
                 Text to translate:
                 ---
