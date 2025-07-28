@@ -132,7 +132,8 @@ Text to summarize:
 @router.post("/ai-helper", summary="Generic AI Helper")
 async def ai_helper_endpoint(request: AiHelperRequest):
     prompt = "" 
-    
+    task_requires_json = request.task_type in ["extract_actions", "detect_topics"]
+
     if request.task_type == "autocomplete":
         prompt = f"""You are an intelligent auto-completion AI. Continue the following text in a natural and helpful way.
         Provide only the continuation, without repeating the original text. The continuation should be a few words or a short phrase.
@@ -186,8 +187,8 @@ async def ai_helper_endpoint(request: AiHelperRequest):
     else:
         raise HTTPException(status_code=400, detail="Invalid task_type specified.")
     
-    response_text = await utils.generate_groq_content(prompt, model_name="llama3-70b-8192", is_json=request.is_json)
-    if request.is_json:
+    response_text = await utils.generate_groq_content(prompt, model_name="llama3-70b-8192", is_json=task_requires_json)
+    if task_requires_json:
         cleaned_json_string = response_text.strip().replace("```json", "").replace("```", "")
         try:
             return json.loads(cleaned_json_string)
