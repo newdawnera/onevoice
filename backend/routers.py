@@ -86,7 +86,7 @@ General Rules:
 - Role Handling: If the selected role ({perspective_role}) is not mentioned or discussed in the document, explicitly state that the role was not part of the conversation (in the source language). Then provide a general overview, highlighting only points that might indirectly affect the {perspective_role}.
 - Accuracy: Never fabricate, assume, or generalize information not present in the text. Recheck your output for at least 99% accuracy before replying.
 - Tone and Language: Use only the language and tone provided in the original document.
-- Formatting: Use concise, plain text. Do not use markdown formatting like `` and **.
+- Formatting: Use concise, plain text. Do not use markdown formatting like ``.
 - Structure: Structure the output clearly and accurately. Do not reframe non-meeting content as a meeting.
 
 
@@ -98,16 +98,16 @@ Text to summarize:
 """ 
     email_subject_prompt = f"Based on the following text, generate a very concise and relevant email subject line, no more than 8-10 words. Output ONLY the subject line itself, with no extra text or quotation marks.\n\nText:\n---\n{request.text}"
 
-    summary = await utils.generate_groq_content(summary_prompt, model_name="llama3-70b-8192")
+    summary = await utils.generate_gemini_content(summary_prompt)
     await asyncio.sleep(1)
-    email_subject_raw = await utils.generate_groq_content(email_subject_prompt, model_name="llama3-70b-8192")
+    email_subject_raw = await utils.generate_gemini_content(email_subject_prompt)
     email_subject = email_subject_raw.strip().replace('"', '')
 
     final_summary = summary
     if request.target_language and request.target_language != "No Translation":
     
         translation_prompt = f"Translate the following text into {request.target_language}. Provide only the translated text, without any additional titles or explanations.\n\nText:\n---\n{summary}"
-        final_summary = await utils.generate_groq_content(translation_prompt, model_name="llama3-70b-8192")
+        final_summary = await utils.generate_gemini_content(translation_prompt)
     else:
     
         final_summary = summary
@@ -132,8 +132,7 @@ Text to summarize:
 @router.post("/ai-helper", summary="Generic AI Helper")
 async def ai_helper_endpoint(request: AiHelperRequest):
     prompt = "" 
-    task_requires_json = request.task_type in ["extract_actions", "detect_topics"]
-
+    
     if request.task_type == "autocomplete":
         prompt = f"""You are an intelligent auto-completion AI. Continue the following text in a natural and helpful way.
         Provide only the continuation, without repeating the original text. The continuation should be a few words or a short phrase.
@@ -187,8 +186,8 @@ async def ai_helper_endpoint(request: AiHelperRequest):
     else:
         raise HTTPException(status_code=400, detail="Invalid task_type specified.")
     
-    response_text = await utils.generate_groq_content(prompt, model_name="llama3-70b-8192", is_json=task_requires_json)
-    if task_requires_json:
+    response_text = await utils.generate_gemini_content(prompt, is_json=request.is_json)
+    if request.is_json:
         cleaned_json_string = response_text.strip().replace("```json", "").replace("```", "")
         try:
             return json.loads(cleaned_json_string)

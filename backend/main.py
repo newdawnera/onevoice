@@ -7,6 +7,7 @@ from routers import router as api_router
 
 setup_logging()
 setup_firebase()
+setup_gemini_api()
 load_html_templates()
 
 
