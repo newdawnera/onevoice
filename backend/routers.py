@@ -188,13 +188,12 @@ async def ai_helper_endpoint(request: AiHelperRequest):
     
     response_text = await utils.generate_groq_content(prompt, model_name="llama3-70b-8192", is_json=request.is_json)
     if request.is_json:
-        cleaned_json_string = response_text.strip().replace("```json", "").replace("```", "")
         try:
-            return json.loads(cleaned_json_string)
+            return json.loads(response_text)
         except json.JSONDecodeError:
-            raise HTTPException(status_code=500, detail="AI returned invalid JSON.")
-    else:
-        return {"text": response_text}
+            
+            logger.error(f"Groq returned invalid JSON despite forced JSON mode: {response_text}")
+            raise HTTPException(status_code=500, detail="AI failed to generate valid JSON.")
 
 @router.post("/send-email/", summary="Send Email via Brevo with Attachments")
 async def send_email_endpoint(
