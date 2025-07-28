@@ -1,7 +1,7 @@
 
 fastapi[all]
 python-dotenv
-groq
+google-generativeai
 assemblyai
 pypdf
 python-docx
