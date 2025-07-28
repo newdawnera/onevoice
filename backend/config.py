@@ -2,7 +2,7 @@
 # This file handles all my setup and configuration for the app.
 import os, json
 from dotenv import load_dotenv
-import google.generativeai as genai
+# import google.generativeai as genai
 import firebase_admin
 from firebase_admin import credentials, firestore
 import logging
@@ -35,16 +35,16 @@ def setup_firebase():
         db = None
 
 
-def setup_gemini_api():
+# def setup_gemini_api():
     
-    try:
-        api_key = os.getenv("GOOGLE_API_KEY")
-        if not api_key:
-            raise ValueError("GOOGLE_API_KEY not found in .env file. AI features will fail.")
-        genai.configure(api_key=api_key)
-        print("Gemini API configured.")
-    except Exception as e:
-        print(f"Error configuring Gemini API: {e}")
+#     try:
+#         api_key = os.getenv("GOOGLE_API_KEY")
+#         if not api_key:
+#             raise ValueError("GOOGLE_API_KEY not found in .env file. AI features will fail.")
+#         genai.configure(api_key=api_key)
+#         print("Gemini API configured.")
+#     except Exception as e:
+#         print(f"Error configuring Gemini API: {e}")
 
 
 # just so i load the html files for the emails, this funciton wil be used

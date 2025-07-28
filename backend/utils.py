@@ -1,6 +1,7 @@
 
 # This file contains all my helper functions that do the actual work.
 import os
+from groq import AsyncGroq
 import asyncio, httpx
 import logging
 import docx
@@ -11,7 +12,7 @@ from pypdf import PdfReader
 import assemblyai as aai
 from datetime import datetime
 import config
-import google.generativeai as genai
+# import google.generativeai as genai
 
 logger = logging.getLogger(__name__)
 
@@ -87,16 +88,42 @@ async def transcribe_with_assemblyai(file: UploadFile) -> str:
 
 
 
-async def generate_gemini_content(prompt: str, model_name: str = "gemini-1.5-flash", is_json: bool = False):
+# async def generate_gemini_content(prompt: str, model_name: str = "gemini-1.5-flash", is_json: bool = False):
+#     try:
+#         model = genai.GenerativeModel(model_name)
+#         response_type = "application/json" if is_json else "text/plain"
+#         generation_config = genai.types.GenerationConfig(response_mime_type=response_type)
+#         response = await model.generate_content_async(prompt, generation_config=generation_config)
+#         return response.text
+#     except Exception as e:
+#         logger.error(f"Gemini API call failed: {e}")
+#         raise HTTPException(status_code=500, detail=f"AI content generation failed: {e}")
+
+async def generate_groq_content(prompt: str, model_name: str = "llama3-8b-8192", is_json: bool = False):
+    """
+    Generates content using the Groq API.
+    It's designed to be a replacement for the Gemini function.
+    """
     try:
-        model = genai.GenerativeModel(model_name)
-        response_type = "application/json" if is_json else "text/plain"
-        generation_config = genai.types.GenerationConfig(response_mime_type=response_type)
-        response = await model.generate_content_async(prompt, generation_config=generation_config)
-        return response.text
+        client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
+
+        request_params = {
+            "messages": [{"role": "user", "content": prompt}],
+            "model": model_name,
+        }
+
+        if is_json:
+            request_params["response_format"] = {"type": "json_object"}
+
+
+        chat_completion = await client.chat.completions.create(**request_params)
+        #I used ** for unpacking the dictionary
+ 
+        return chat_completion.choices[0].message.content
+
     except Exception as e:
-        logger.error(f"Gemini API call failed: {e}")
-        raise HTTPException(status_code=500, detail=f"AI content generation failed: {e}")
+        logger.error(f"Groq API call failed: {e}")
+        raise HTTPException(status_code=500, detail=f"AI content generation failed with Groq: {e}")
 
 
 async def send_email_via_brevo(recipient_email, subject, html_content, sender_name="AI Meeting Wizard"):
