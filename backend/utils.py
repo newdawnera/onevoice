@@ -99,7 +99,7 @@ async def transcribe_with_assemblyai(file: UploadFile) -> str:
 #         logger.error(f"Gemini API call failed: {e}")
 #         raise HTTPException(status_code=500, detail=f"AI content generation failed: {e}")
 
-async def generate_groq_content(prompt: str, model_name: str = "llama3-8b-8192", is_json: bool = False):
+async def generate_groq_content(prompt: str, model_name: str = "llama3-8b-8192", is_json: bool = True):
     """
     Generates content using the Groq API.
     It's designed to be a replacement for the Gemini function.
