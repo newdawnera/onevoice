@@ -98,16 +98,16 @@ Text to summarize:
 """ 
     email_subject_prompt = f"Based on the following text, generate a very concise and relevant email subject line, no more than 8-10 words. Output ONLY the subject line itself, with no extra text or quotation marks.\n\nText:\n---\n{request.text}"
 
-    summary = await utils.generate_gemini_content(summary_prompt)
+    summary = await utils.generate_groq_content(summary_prompt, model_name="llama3-70b-8192")
     await asyncio.sleep(1)
-    email_subject_raw = await utils.generate_gemini_content(email_subject_prompt)
+    email_subject_raw = await utils.generate_groq_content(email_subject_prompt, model_name="llama3-70b-8192")
     email_subject = email_subject_raw.strip().replace('"', '')
 
     final_summary = summary
     if request.target_language and request.target_language != "No Translation":
     
         translation_prompt = f"Translate the following text into {request.target_language}. Provide only the translated text, without any additional titles or explanations.\n\nText:\n---\n{summary}"
-        final_summary = await utils.generate_gemini_content(translation_prompt)
+        final_summary = await utils.generate_groq_content(translation_prompt, model_name="llama3-70b-8192")
     else:
     
         final_summary = summary
@@ -186,7 +186,7 @@ async def ai_helper_endpoint(request: AiHelperRequest):
     else:
         raise HTTPException(status_code=400, detail="Invalid task_type specified.")
     
-    response_text = await utils.generate_gemini_content(prompt, is_json=request.is_json)
+    response_text = await utils.generate_groq_content(prompt, model_name="llama3-70b-8192", is_json=request.is_json)
     if request.is_json:
         cleaned_json_string = response_text.strip().replace("```json", "").replace("```", "")
         try:
