@@ -1,7 +1,7 @@
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from config import setup_firebase, load_html_templates, setup_logging
+from config import setup_firebase, setup_gemini_api, load_html_templates, setup_logging
 from routers import router as api_router
 
 
