@@ -13,7 +13,6 @@ from datetime import datetime
 import config
 import google.generativeai as genai
 from langdetect import detect, LangDetectException
-from pyModels import ResultRequest
 
 logger = logging.getLogger(__name__)
 
@@ -103,25 +102,25 @@ async def generate_gemini_content(prompt: str, model_name: str = "gemini-1.5-fla
 
 
 
-async def role_summary(general_summary: str):
+async def role_summary(general_summary: str, role:str):
         
-    if not ResultRequest.role or ResultRequest.role.strip().lower() in DEFAULT_ROLES:
+    if not role or role.strip().lower() in DEFAULT_ROLES:
         logger.info("No specific role selected. Returning general summary.")
         return general_summary
 
-    logger.info(f"Refining summary for role: {ResultRequest.role}")
+    logger.info(f"Refining summary for role: {role}")
 
     
     refine_prompt = f"""
-            You are an expert at refining summaries based on a person's role. Your task is to revise and tailor the provided general summary to be specifically relevant for a person in the **'{ResultRequest.role}'** role.
+            You are an expert at refining summaries based on a person's role. Your task is to revise and tailor the provided general summary to be specifically relevant for a person in the **'{role}'** role.
 
         Follow these rules precisely:
-        - Focus ONLY on discussions, decisions, and action items from the summary that directly impact or concern the '{ResultRequest.role}'.
+        - Focus ONLY on discussions, decisions, and action items from the summary that directly impact or concern the '{role}'.
         - Omit or minimize details that are not relevant to this specific role.
         - Maintain the original language and structure (headings, bullet points, etc.) of the summary.
         - You MUST only use information present in the 'General Summary to Refine'. Do not add any external information or interpretations.
         - Formatting: Use concise, plain text. Do not use markdown like ` or **.
-        - If the role is not mentioned or relevant to the summary, you MUST return the original summary exactly as it is, with a note at the top saying: "The '{ResultRequest.role}' was not a significant focus of this discussion."
+        - If the role is not mentioned or relevant to the summary, you MUST return the original summary exactly as it is, with a note at the top saying: "The '{role}' was not a significant focus of this discussion."
 
         ---
         EXAMPLE:
