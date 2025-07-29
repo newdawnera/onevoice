@@ -41,65 +41,52 @@ async def upload_document_endpoint(file: UploadFile = File(...)):
     return {"text": text_content}
 
 @router.post("/generate-result/", summary="Generate Combined Result")
-async def generate_result_endpoint(request: ResultRequest):
-    if request.role and request.role != "No Selection":
-        perspective_role = request.role
-    else:
-        perspective_role = "general overview"
-        
+async def generate_result_endpoint(request: ResultRequest):        
 
     summary_prompt = f"""
-You are an advanced and professional assistant that summarizes content. 
+    You are an expert AI assistant specializing in creating comprehensive and structured summaries of business documents. Your task is to generate a high-quality, general overview summary of the provided document.
 
-**ABSOLUTE INSTRUCTION: The user has reported that you sometimes mistakenly respond in a language different from the original text language. If the text is in English, You MUST not translate the text. You MUST not assume the language of text**
+    This summary must be a neutral, objective, and detailed representation of the content, suitable for any reader regardless of their role. Do not tailor it for any specific perspective; simply extract and organize the key facts.
 
-Your primary task is to generate a well-structured and accurate summary of the text provided below and tailor it only to a {perspective_role} perspective.
+    **If the document is a meeting transcript:**
+    Generate a well-organized meeting summary using the standard headings below.
+    - Capture all relevant information for each heading.
+    - Omit any heading for which no information exists in the text.
+    - Do not fabricate or assume any missing details.
 
-CRITICAL LANGUAGE RULE: Your entire response, including all headings and content, MUST be in the same language as the original text provided. Do not translate any part of the document, including names, terms, or headings.
+    **Standard Headings for Meetings:**
+    1.  **Meeting Details:** Record the date, time, and platform if provided.
+    2.  **Attendees:** List all participants, including their roles if mentioned. Note any absentees.
+    3.  **Agenda:** List the main topics of discussion as stated or inferred from the text.
+    4.  **Discussion Summary / Key Points:** Detail the main arguments, updates, and points discussed for each agenda item.
+    5.  **Decisions Made:** List all key decisions, the rationale behind them, and their expected impact.
+    6.  **Action Items:** List all assigned tasks. For each task, include the owner, the exact task, and the deadline, if specified.
+    7.  **Next Steps:** Document any unresolved issues, follow-up conversations, or future plans.
+    8.  **Next Meeting:** Note the date and time if a follow-up meeting was scheduled.
 
----
-If the document appears to be a meeting transcript:
+    **If the document is NOT a meeting transcript (e.g., a report, email, or project brief):**
+    Generate a structured summary using logical headings that fit the content.
+    - Common headings include: "Executive Summary," "Key Findings," "Main Arguments," "Proposed Solutions," "Data Analysis," "Identified Risks," or "Recommendations."
+    - The goal is to create a clear, easily digestible overview of the document's core message and supporting details.
 
-Generate a concise, well-organized meeting summary. Summarize and tailor to a {perspective_role} only focusing on discussions that concern the {perspective_role}.
-- Use appropriate headings based on the content (for example: "Agenda," "Discussion Summary," "Decisions Made," "Action Items," "Next Step" and so on). Ensure the headings you create are also in the original language.
-- Omit any heading that has no relevant information.
-- Prioritize discussions, risks, actions, or decisions that directly impact or concern the {perspective_role}.
-- Minimize or omit unrelated content unless it directly affects the {perspective_role}.
-
----
-If the document is NOT a meeting transcript:
-
-Generate a structured summary using headings appropriate to the content (for example: "Key Findings," "Main Insights," or "Recommended Actions").
-- Always summarize and tailor to a {perspective_role}.
-- Tailor the structure to match the document's format, purpose, and type (e.g., academic report, technical documentation, guideline, business memo, etc.).
-
----
-Language Handling Rule:
-
-- Do not translate any part of the original text.
-- Preserve all headings, names, and content in the original language as provided (e.g., Arabic, French, etc.).
-- Summarize in the same language as the source unless explicitly instructed to translate.
-
----
-General Rules:
-
-- Role Handling: If the selected role ({perspective_role}) is not mentioned or discussed in the document, explicitly state that the role was not part of the conversation (in the source language). Then provide a general overview, highlighting only points that might indirectly affect the {perspective_role}.
-- Accuracy: Never fabricate, assume, or generalize information not present in the text. Recheck your output for at least 99% accuracy before replying.
-- Tone and Language: Use only the language and tone provided in the original document.
-- Formatting: Use concise, plain text. Do not use markdown formatting like ``.
-- Structure: Structure the output clearly and accurately. Do not reframe non-meeting content as a meeting.
+    **Universal Rules:**
+    - **Stick to the Source:** Extract information ONLY from the provided text. Do not infer, assume, or add any outside information.
+    - **Maintain Neutrality:** Use a neutral, professional tone. Do not inject opinion or emotion.
+    - **Accuracy is Paramount:** Ensure the final summary is a faithful and accurate representation of the key information in the source document.
+    - **Plain Text Only:** Do not use any markdown formatting (like **, ``, or #).
 
 
 
-Text to summarize:
----
-{request.text}
----
-""" 
+    Text to summarize:
+    ---
+    {request.text}
+    ---
+    """ 
     email_subject_prompt = f"Based on the following text, generate a very concise and relevant email subject line, no more than 8-10 words. Output ONLY the subject line itself, with no extra text or quotation marks.\n\nText:\n---\n{request.text}"
 
-    initial_summary = await utils.generate_gemini_content(summary_prompt)
-    summary = await utils.correct_summary_language(request.text, initial_summary)
+    general_summary = await utils.generate_gemini_content(summary_prompt)
+    refined_summary = await utils.role_summary(general_summary)
+    summary = await utils.correct_summary_language(request.text, refined_summary)
     email_subject_raw = await utils.generate_gemini_content(email_subject_prompt)
     email_subject = email_subject_raw.strip().replace('"', '')
 

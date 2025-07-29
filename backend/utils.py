@@ -13,9 +13,14 @@ from datetime import datetime
 import config
 import google.generativeai as genai
 from langdetect import detect, LangDetectException
+from pyModels import ResultRequest
 
 logger = logging.getLogger(__name__)
 
+
+DEFAULT_ROLES = {    
+    "general overview", "no selection", "general", "normal", "full review", "default", "standard", "all", "overall", "unfiltered", "everyone", "comprehensive"
+}
 
 async def read_text_from_file(file: UploadFile):
     filename = file.filename.lower()
@@ -48,12 +53,9 @@ async def read_text_from_file(file: UploadFile):
 
 
 
-
+# this transcribes an audio file using the AssemblyAI API and formats the output with speaker labels if available.
 async def transcribe_with_assemblyai(file: UploadFile) -> str:
-    """
-    Transcribes an audio file using the AssemblyAI API and formats the output
-    with speaker labels if available.
-    """
+    
     try:
         
         aai.settings.api_key = os.getenv("ASSEMBLYAI_API_KEY")
@@ -100,9 +102,65 @@ async def generate_gemini_content(prompt: str, model_name: str = "gemini-1.5-fla
         raise HTTPException(status_code=500, detail=f"AI content generation failed: {e}")
 
 
+
+async def role_summary(general_summary: str):
+        
+    if not ResultRequest.role or ResultRequest.role.strip().lower() in DEFAULT_ROLES:
+        logger.info("No specific role selected. Returning general summary.")
+        return general_summary
+
+    logger.info(f"Refining summary for role: {ResultRequest.role}")
+
+    
+    refine_prompt = f"""
+            You are an expert at refining summaries based on a person's role. Your task is to revise and tailor the provided general summary to be specifically relevant for a person in the **'{ResultRequest.role}'** role.
+
+        Follow these rules precisely:
+        - Focus ONLY on discussions, decisions, and action items from the summary that directly impact or concern the '{ResultRequest.role}'.
+        - Omit or minimize details that are not relevant to this specific role.
+        - Maintain the original language and structure (headings, bullet points, etc.) of the summary.
+        - You MUST only use information present in the 'General Summary to Refine'. Do not add any external information or interpretations.
+        - Formatting: Use concise, plain text. Do not use markdown like ` or **.
+        - If the role is not mentioned or relevant to the summary, you MUST return the original summary exactly as it is, with a note at the top saying: "The '{ResultRequest.role}' was not a significant focus of this discussion."
+
+        ---
+        EXAMPLE:
+        Role: 'UX Designer'
+
+        General Summary to Refine:
+        ---
+        Project Phoenix Kick-off
+        - Goal: Launch new customer dashboard by Q4.
+        - Action Items:
+        - Engineering team to finalize the database schema by Friday.
+        - Marketing to prepare the launch campaign brief.
+        - Legal to review new data privacy requirements.
+        - UX team needs to deliver initial wireframes in two weeks.
+        - Budget: Budget approved, but server costs are higher than expected.
+        ---
+
+        Refined Summary:
+        ---
+        Project Phoenix Kick-off
+        - Goal: Launch new customer dashboard by Q4.
+        - Action Items:
+        - UX team needs to deliver initial wireframes in two weeks.
+        ---
+        END OF EXAMPLE
+        ---
+
+        General Summary to Refine:
+        ---
+        {general_summary}
+        ---
+    """
+
+    refined_summary = await generate_gemini_content(refine_prompt)
+    return refined_summary
+
 #This checks if the summary language matches the original text language.
 #If not, it translates the summary to the correct language.
-async def correct_summary_language(original_text: str, summary_text: str) -> str:
+async def correct_summary_language(original_text: str, summary_text: str):
     
     try:
        
