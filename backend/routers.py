@@ -85,7 +85,7 @@ async def generate_result_endpoint(request: ResultRequest):
     email_subject_prompt = f"Based on the following text, generate a very concise and relevant email subject line, no more than 8-10 words. Output ONLY the subject line itself, with no extra text or quotation marks.\n\nText:\n---\n{request.text}"
 
     general_summary = await utils.generate_gemini_content(summary_prompt)
-    refined_summary = await utils.role_summary(general_summary)
+    refined_summary = await utils.role_summary(general_summary, request.role)
     summary = await utils.correct_summary_language(request.text, refined_summary)
     email_subject_raw = await utils.generate_gemini_content(email_subject_prompt)
     email_subject = email_subject_raw.strip().replace('"', '')
