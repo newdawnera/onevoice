@@ -60,10 +60,14 @@ async def transcribe_with_assemblyai(file: UploadFile, language: str):
         aai.settings.api_key = os.getenv("ASSEMBLYAI_API_KEY")
         if not aai.settings.api_key:
             raise HTTPException(status_code=500, detail="AssemblyAI API key not configured.")
+        
+        speaker_labels_lang = ['auto','en_us','en_uk','es','fr','de','it','ja','pt','ru','zh']
 
-        config_params = {"speaker_labels": True}
+        config_params = {}
+        if language in speaker_labels_lang:
+            config_params["speaker_labels"] = True
+
         if language == "auto":
-
             config_params["language_detection"] = True
             logger.info("AssemblyAI transcription running with automatic language detection.")
         else:
@@ -83,7 +87,7 @@ async def transcribe_with_assemblyai(file: UploadFile, language: str):
             raise HTTPException(status_code=500, detail=transcript.error)
 
  
-        if transcript.utterances:
+        if config.speaker_labels and transcript.utterances:
             formatted_transcript = "\n".join(
                 f"Speaker {utterance.speaker}: {utterance.text}"
                 for utterance in transcript.utterances
