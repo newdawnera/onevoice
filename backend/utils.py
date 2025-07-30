@@ -53,7 +53,7 @@ async def read_text_from_file(file: UploadFile):
 
 
 # this transcribes an audio file using the AssemblyAI API and formats the output with speaker labels if available.
-async def transcribe_with_assemblyai(file: UploadFile) -> str:
+async def transcribe_with_assemblyai(file: UploadFile, language: str) -> str:
     
     try:
         
@@ -61,8 +61,18 @@ async def transcribe_with_assemblyai(file: UploadFile) -> str:
         if not aai.settings.api_key:
             raise HTTPException(status_code=500, detail="AssemblyAI API key not configured.")
 
-        
-        config = aai.TranscriptionConfig(speaker_labels=True)
+        config_params = {"speaker_labels": True}
+        if language == "auto":
+
+            config_params["language_detection"] = True
+            logger.info("AssemblyAI transcription running with automatic language detection.")
+        else:
+            
+            config_params["language_detection"] = True
+            config_params["language_code"] = language
+            logger.info(f"AssemblyAI transcription running with language detection, boosted for: {language}")
+
+        config = aai.TranscriptionConfig(**config_params)
         transcriber = aai.Transcriber()
 
         
@@ -122,12 +132,12 @@ async def role_summary(general_summary: str, role:str):
         - Formatting: Use concise, plain text. Do not use markdown like ` or **.
         - If the role is not mentioned or relevant to the summary, you MUST return the original summary exactly as it is, with a note at the top saying: "The '{role}' was not a significant focus of this discussion."
 
-        ---
+        
         EXAMPLE:
         Role: 'UX Designer'
 
         General Summary to Refine:
-        ---
+        
         Project Phoenix Kick-off
         - Goal: Launch new customer dashboard by Q4.
         - Action Items:
@@ -136,17 +146,17 @@ async def role_summary(general_summary: str, role:str):
         - Legal to review new data privacy requirements.
         - UX team needs to deliver initial wireframes in two weeks.
         - Budget: Budget approved, but server costs are higher than expected.
-        ---
+        
 
         Refined Summary:
-        ---
+        
         Project Phoenix Kick-off
         - Goal: Launch new customer dashboard by Q4.
         - Action Items:
         - UX team needs to deliver initial wireframes in two weeks.
-        ---
+        
         END OF EXAMPLE
-        ---
+        
 
         General Summary to Refine:
         ---
