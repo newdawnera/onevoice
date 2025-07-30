@@ -68,7 +68,7 @@ async def transcribe_with_assemblyai(file: UploadFile, language: str) -> str:
             logger.info("AssemblyAI transcription running with automatic language detection.")
         else:
             
-            config_params["language_detection"] = True
+            
             config_params["language_code"] = language
             logger.info(f"AssemblyAI transcription running with language detection, boosted for: {language}")
 

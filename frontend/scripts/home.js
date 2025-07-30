@@ -28,7 +28,7 @@ const App = (() => {
     isSuggestionBoxVisible: false,
     suggestionCursorIndex: 0,
 
-    transcriptionLanguage: "en-US",
+    transcriptionLanguage: "auto",
   };
 
   let quill, inputQuill, emailQuill;
@@ -65,7 +65,6 @@ const App = (() => {
     "export-result",
     "export-transcript",
     "speech-to-text-container",
-
     "unified-language-select",
     "record-btn",
     "recording-indicator",
@@ -660,7 +659,7 @@ const App = (() => {
     setupEventListeners();
 
     const languages = {
-      "": "No Selection",
+      auto: "Auto Detect Language",
       "en-US": "English (US)",
       "en-GB": "English (UK)",
       "es-ES": "Spanish",
