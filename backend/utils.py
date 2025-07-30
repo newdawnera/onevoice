@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 DEFAULT_ROLES = {    
-    "general overview", "no selection", "general", "normal", "full review", "default", "standard", "all", "overall", "unfiltered", "everyone", "comprehensive"
+    "general overview", "No Selection", "general", "normal", "full review", "default", "standard", "all", "overall", "unfiltered", "everyone", "comprehensive"
 }
 
 async def read_text_from_file(file: UploadFile):
@@ -129,14 +129,14 @@ async def role_summary(general_summary: str, role:str):
             You are an expert at refining summaries based on a person's role. Your task is to revise and tailor the provided general summary to be specifically relevant for a person in the **'{role}'** role.
 
         Follow these rules precisely:
-        - Focus ONLY on discussions, decisions, and action items from the summary that directly impact or concern the '{role}'.
+        - Focus ONLY on important headings and bullet points from the summary that directly impact or concern the '{role}'.
         - Omit or minimize details that are not relevant to this specific role.
-        - Maintain the original language and structure (headings, bullet points, etc.) of the summary.
-        - You MUST only use information present in the 'General Summary to Refine'. Do not add any external information or interpretations.
-        - Formatting: Use concise, plain text. Do not use markdown like ` or **.
+        - Maintain the original structure (headings, bullet points, etc.) of the summary.
+        - You MUST only use information present in the 'Summary to Refine'. Do not add any external information or interpretations.
+        - Formatting: Use concise, plain text. Do not use markdown like ``, # or **.
         - If the role is not mentioned or relevant to the summary, you MUST return the original summary exactly as it is, with a note at the top saying: "The '{role}' was not a significant focus of this discussion."
 
-        
+        ---
         EXAMPLE:
         Role: 'UX Designer'
 
@@ -160,7 +160,7 @@ async def role_summary(general_summary: str, role:str):
         - UX team needs to deliver initial wireframes in two weeks.
         
         END OF EXAMPLE
-        
+        ---
 
         General Summary to Refine:
         ---
@@ -197,7 +197,7 @@ async def correct_summary_language(original_text: str, summary_text: str):
             logger.warning(f"Language mismatch detected. Translating summary from '{summary_lang}' to '{original_lang}'.")
             
             correction_prompt = f"""Translate the following text into the language with the ISO 639-1 code '{original_lang}'.
-                Maintain the Structure of the text. Do not add any interpretation or assumption. Provide ONLY the translated text.
+                Maintain the Structure of the text. Do not add any interpretation or assumptions. Provide ONLY the translated text.
 
                 Text to translate:
                 ---
