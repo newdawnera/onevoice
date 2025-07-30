@@ -660,6 +660,7 @@ const App = (() => {
     setupEventListeners();
 
     const languages = {
+      "": "No Selection",
       "en-US": "English (US)",
       "en-GB": "English (UK)",
       "es-ES": "Spanish",
@@ -1254,6 +1255,7 @@ const App = (() => {
 
         const formData = new FormData();
         formData.append("file", audioBlob, "dictation.webm");
+        formData.append("language", state.transcriptionLanguage);
         transcriptionAbortController = new AbortController();
 
         try {

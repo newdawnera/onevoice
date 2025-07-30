@@ -23,12 +23,13 @@ logger = logging.getLogger(__name__)
 
 @router.post("/transcribe/", summary="Transcribe Audio/Video File")
 async def transcribe_endpoint(
-    file: UploadFile = File(None)):
+    file: UploadFile = File(None),
+    language:str=Form("auto")):
     if not file:
         raise HTTPException(status_code=400, detail="No audio file provided.")
 
-    # The new util function handles everything, including speaker separation.
-    transcription = await utils.transcribe_with_assemblyai(file)
+    # This assemby ai function will handles everything, including speaker separation.
+    transcription = await utils.transcribe_with_assemblyai(file, language)
     
     return {"transcription": transcription}
 
