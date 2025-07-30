@@ -660,16 +660,17 @@ const App = (() => {
 
     const languages = {
       auto: "Auto Detect Language",
-      "en-US": "English (US)",
-      "en-GB": "English (UK)",
-      "es-ES": "Spanish",
-      "fr-FR": "French",
-      "de-DE": "German",
-      "it-IT": "Italian",
-      "ja-JP": "Japanese",
-      "pt-PT": "Portuguese",
-      "ru-RU": "Russian",
-      "zh-CN": "Chinese (Mandarin)",
+      en_us: "English (US)",
+      en_uk: "English (UK)",
+      yo: "Yoruba",
+      es: "Spanish",
+      fr: "French",
+      de: "German",
+      it: "Italian",
+      ja: "Japanese",
+      pt: "Portuguese",
+      ru: "Russian",
+      zh: "Chinese (Mandarin)",
     };
     const roles = {
       "": "No Selection",
