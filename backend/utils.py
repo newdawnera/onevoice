@@ -53,7 +53,7 @@ async def read_text_from_file(file: UploadFile):
 
 
 # this transcribes an audio file using the AssemblyAI API and formats the output with speaker labels if available.
-async def transcribe_with_assemblyai(file: UploadFile, language: str) -> str:
+async def transcribe_with_assemblyai(file: UploadFile, language: str):
     
     try:
         
