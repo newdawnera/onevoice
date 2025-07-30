@@ -45,36 +45,36 @@ async def upload_document_endpoint(file: UploadFile = File(...)):
 async def generate_result_endpoint(request: ResultRequest):        
 
     summary_prompt = f"""
-    You are an expert AI assistant specializing in creating comprehensive and structured summaries of business documents. Your task is to generate a high-quality, general overview summary of the provided document.
+    You are an expert AI assistant specializing in creating comprehensive and structured summaries of documents. Your task is to generate a high-quality, general overview summary of the provided document.
 
     This summary must be a neutral, objective, and detailed representation of the content, suitable for any reader regardless of their role. Do not tailor it for any specific perspective; simply extract and organize the key facts.
 
-    **If the document is a meeting transcript:**
+    If the document is a meeting transcript:
     Generate a well-organized meeting summary using the standard headings below.
     - Capture all relevant information for each heading.
     - Omit any heading for which no information exists in the text.
     - Do not fabricate or assume any missing details.
 
-    **Standard Headings for Meetings:**
-    1.  **Meeting Details:** Record the date, time, and platform if provided.
-    2.  **Attendees:** List all participants, including their roles if mentioned. Note any absentees.
-    3.  **Agenda:** List the main topics of discussion as stated or inferred from the text.
-    4.  **Discussion Summary / Key Points:** Detail the main arguments, updates, and points discussed for each agenda item.
-    5.  **Decisions Made:** List all key decisions, the rationale behind them, and their expected impact.
-    6.  **Action Items:** List all assigned tasks. For each task, include the owner, the exact task, and the deadline, if specified.
-    7.  **Next Steps:** Document any unresolved issues, follow-up conversations, or future plans.
-    8.  **Next Meeting:** Note the date and time if a follow-up meeting was scheduled.
+    Standard Headings for Meetings:
+    1.  Meeting Details: Record the date, time, and platform if provided.
+    2.  Attendees: List all participants, including their roles if mentioned. Note any absentees.
+    3.  Agenda: List the main topics of discussion as stated or inferred from the text.
+    4.  Discussion Summary / Key Points: Detail the main arguments, updates, and points discussed for each agenda item.
+    5.  Decisions Made: List all key decisions, the rationale behind them, and their expected impact.
+    6.  Action Items: List all assigned tasks. For each task, include the owner, the exact task, and the deadline, if specified.
+    7.  Next Steps: Document any unresolved issues, follow-up conversations, or future plans.
+    8.  Next Meeting: Note the date and time if a follow-up meeting was scheduled.
 
-    **If the document is NOT a meeting transcript (e.g., a report, email, or project brief):**
+    If the document is NOT a meeting transcript (e.g., a report, email, or project brief):
     Generate a structured summary using logical headings that fit the content.
     - Common headings include: "Executive Summary," "Key Findings," "Main Arguments," "Proposed Solutions," "Data Analysis," "Identified Risks," or "Recommendations."
     - The goal is to create a clear, easily digestible overview of the document's core message and supporting details.
 
-    **Universal Rules:**
-    - **Stick to the Source:** Extract information ONLY from the provided text. Do not infer, assume, or add any outside information.
-    - **Maintain Neutrality:** Use a neutral, professional tone. Do not inject opinion or emotion.
-    - **Accuracy is Paramount:** Ensure the final summary is a faithful and accurate representation of the key information in the source document.
-    - **Plain Text Only:** Do not use any markdown formatting (like **, ``, or #).
+    Universal Rules:
+    - Stick to the Source: Extract information ONLY from the provided text. Do not infer, assume, or add any outside information.
+    - Maintain Neutrality: Use a neutral, professional tone. Do not inject opinion or emotion.
+    - Accuracy is Paramount: Ensure the final summary is a faithful and accurate representation of the key information in the source document.
+    - Plain Text Only: Do not use any markdown formatting (like **, ``, or #).
 
 
 
@@ -157,7 +157,7 @@ async def ai_helper_endpoint(request: AiHelperRequest):
         prompt = f"""From the following meeting summary, extract all action items.
         Your response MUST be a valid JSON array of objects.
         Each object should have 'task', 'assignee', 'assigneeEmail', 'startDate', and 'deadline' keys.
-        **Crucially, any date found for 'startDate' and 'deadline' MUST be formatted as 'yyyy-mm-dd'.**
+        Crucially, any date found for 'startDate' and 'deadline' MUST be formatted as 'yyyy-mm-dd'.
 
         IMPORTANT DATE RULE: If a year is not explicitly mentioned for a date in the text, you MUST assume the year is {current_year}. Do not use any other year. For example, if the text says 'the deadline is March 5th', you must format it as '{current_year}-03-05'.
 
