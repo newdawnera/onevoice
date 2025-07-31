@@ -126,51 +126,29 @@ async def role_summary(general_summary: str, role:str):
 
     
     refine_prompt = f"""
-            You are an expert at refining summaries based on a person's role. Your task is to revise and tailor the provided general summary to be specifically relevant for a person in the **'{role}'** role.
+            You are an expert at refining summaries for a specific person's role. Your task is to revise the provided General Summary to be specifically relevant for the person in the '{role}'.
 
-        IF THE ROLE IS MENTIONED or relevant to the summary, Follow these rules precisely:
-        - Focus ONLY on important headings and bullet points from the summary that directly impact or concern the '{role}'.
-        - Omit or minimize details that are not relevant to this specific role.
-        - Capture dates and tasks assigned to these role.
-        - Maintain the original structure (headings, bullet points, etc.) of the summary.
-        - You MUST only use information present in the 'Summary to Refine'. Do not add any external information or interpretations.
-        - Formatting: Use concise, plain text. Do not use markdown like ``, # or **.
+            First, analyze the "General Summary to Refine" to determine if the '{role}' is mentioned or has any assigned tasks or direct relevance.
 
-        IF THE ROLE IS NOT MENTIONED or relevant to the summary, Follow these rules precisely:
-        - You MUST return the original general summary exactly as it is, with a note at the top saying: "The '{role}' was not a significant focus of this discussion."
-        - Do not assume or add your own interpretation to the summary
-        - Use concise, plain text. Do not use markdown like ``, # or **.
+            ---
+            IF THE ROLE IS MENTIONED or has relevant tasks/decisions:
+            - The output MUST be a filtered summary.
+            - Focus ONLY on the key decisions and action items that directly impact or are assigned to the '{role}'.
+            - Omit all details not relevant to this specific role.
+            - Maintain the original language and structure (headings, bullet points).
+            - You MUST only use information present in the 'General Summary to Refine'.
+            - Do not use markdown like ``, # or **.
 
-        ---
-        EXAMPLE:
-        Role: 'UX Designer'
+            IF THE ROLE IS NOT MENTIONED and has no relevance:
+            - You MUST return the original "General Summary to Refine" exactly as it is.
+            - Add a note at the very top: "This summary is not specific to the '{role}' role, as it was not a focus of the discussion. Here is the general summary:"
+            - Do not add or assume any other information.
+            - Do not use markdown like ``, # or **.
+            ---
 
-        General Summary to Refine:
-        
-        Project Phoenix Kick-off
-        - Goal: Launch new customer dashboard by Q4.
-        - Action Items:
-        - Engineering team to finalize the database schema by Friday.
-        - Marketing to prepare the launch campaign brief.
-        - Legal to review new data privacy requirements.
-        - UX team needs to deliver initial wireframes in two weeks.
-        - Budget: Budget approved, but server costs are higher than expected.
-        
-
-        Refined Summary:
-        
-        Project Phoenix Kick-off
-        - Goal: Launch new customer dashboard by Q4.
-        - Action Items:
-        - UX team needs to deliver initial wireframes in two weeks.
-        
-        END OF EXAMPLE
-        ---
-
-        General Summary to Refine:
-        ---
-        {general_summary}
-        ---
+            General Summary to Refine:
+            {general_summary}
+            ---
     """
 
     refined_summary = await generate_gemini_content(refine_prompt)
