@@ -128,13 +128,18 @@ async def role_summary(general_summary: str, role:str):
     refine_prompt = f"""
             You are an expert at refining summaries based on a person's role. Your task is to revise and tailor the provided general summary to be specifically relevant for a person in the **'{role}'** role.
 
-        Follow these rules precisely:
+        IF THE ROLE IS MENTIONED or relevant to the summary, Follow these rules precisely:
         - Focus ONLY on important headings and bullet points from the summary that directly impact or concern the '{role}'.
         - Omit or minimize details that are not relevant to this specific role.
+        - Capture dates and tasks assigned to these role.
         - Maintain the original structure (headings, bullet points, etc.) of the summary.
         - You MUST only use information present in the 'Summary to Refine'. Do not add any external information or interpretations.
         - Formatting: Use concise, plain text. Do not use markdown like ``, # or **.
-        - If the role is not mentioned or relevant to the summary, you MUST return the original summary exactly as it is, with a note at the top saying: "The '{role}' was not a significant focus of this discussion."
+
+        IF THE ROLE IS NOT MENTIONED or relevant to the summary, Follow these rules precisely:
+        - You MUST return the original general summary exactly as it is, with a note at the top saying: "The '{role}' was not a significant focus of this discussion."
+        - Do not assume or add your own interpretation to the summary
+        - Use concise, plain text. Do not use markdown like ``, # or **.
 
         ---
         EXAMPLE:
