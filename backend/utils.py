@@ -132,18 +132,19 @@ async def role_summary(general_summary: str, role:str):
 
             ---
             IF THE ROLE IS MENTIONED or has relevant tasks/decisions:
-            - The output MUST be a filtered summary.
-            - Focus ONLY on the key decisions and action items that directly impact or are assigned to the '{role}'.
-            - Omit all details not relevant to this specific role.
+            - Your response MUST begin with the following sentence, followed by two newlines:
+            "This summary is specific to the '{role}' role, as requested:"
+            - After that sentence, you MUST provide a filtered summary containing ONLY the key decisions and action items that directly impact or are assigned to the '{role}'.
+            - Omit all other details from the summary.
             - Maintain the original language and structure (headings, bullet points).
-            - You MUST only use information present in the 'General Summary to Refine'.
             - Do not use markdown like ``, # or **.
 
+
             IF THE ROLE IS NOT MENTIONED and has no relevance:
-            - You MUST add a note at the very top: "This summary is not specific to the '{role}' role, as it was not a focus of the discussion. Here is the general summary:"
-            - You MUST return the original "General Summary to Refine" exactly as it is.
+            - Your response MUST begin with the following sentence, followed by two newlines:
+            "This summary is not specific to the '{role}' role, as it was not a focus of the discussion. Here is the general summary:"
+            - After that exact sentence, you MUST append the original "General Summary to Refine" completely and without any changes.
             - Do not add or assume any other information.
-            - Do not use markdown like ``, # or **.
             ---
 
             General Summary to Refine:
