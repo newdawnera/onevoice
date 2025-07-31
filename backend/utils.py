@@ -140,8 +140,8 @@ async def role_summary(general_summary: str, role:str):
             - Do not use markdown like ``, # or **.
 
             IF THE ROLE IS NOT MENTIONED and has no relevance:
+            - You MUST add a note at the very top: "This summary is not specific to the '{role}' role, as it was not a focus of the discussion. Here is the general summary:"
             - You MUST return the original "General Summary to Refine" exactly as it is.
-            - Add a note at the very top: "This summary is not specific to the '{role}' role, as it was not a focus of the discussion. Here is the general summary:"
             - Do not add or assume any other information.
             - Do not use markdown like ``, # or **.
             ---
