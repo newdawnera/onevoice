@@ -37,10 +37,10 @@
 
     <main class="flex flex-col items-center justify-center text-center p-4 m-4">
       <h1 class="text-4xl md:text-6xl font-bold">Ally</h1>
-      <p id="welcome-message" class="md:text-xl text-slate-300 mt-4 max-w-2xl">
-        Effortlessly transform your meeting recordings and notes into summaries,
-        action items, and insights.
-      </p>
+      <p
+        id="welcome-message"
+        class="md:text-xl text-slate-300 mt-4 max-w-2xl"
+      ></p>
 
       <div class="mt-16 mb-4">
         <a
@@ -49,6 +49,11 @@
           class="bg-indigo-600 text-white font-bold py-4 px-10 rounded-lg md:text-xl shadow-lg hover:bg-indigo-700 transition-transform transform hover:scale-105"
         >
           Get Started
+        </a>
+        <br /><br />
+
+        <a href="#" id="show-how-it-works" class="hover-link">
+          <small>How it works</small>
         </a>
       </div>
     </main>
@@ -59,6 +64,27 @@
         "Dream big but start small." - Lucky Jeagun Daniel
       </p>
     </footer>
+
+    <div id="how-it-works-panel">
+      <button id="close-panel-btn" aria-label="Close panel">
+        <svg
+          class="w-6 h-6 text-gray-400"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M6 18L18 6M6 6l12 12"
+          ></path>
+        </svg>
+      </button>
+
+      <iframe id="panel-iframe" src="how.html" title="How it works"></iframe>
+    </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/vanta@latest/dist/vanta.halo.min.js"></script>
