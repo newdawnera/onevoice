@@ -96,6 +96,7 @@ const App = (() => {
     "close-qa-btn",
     "close-transcript-qa-btn",
     "manage-action-logs-btn",
+    "fullscreen-recording-overlay",
     "year",
     "page-1-controls",
   ];
@@ -176,6 +177,16 @@ const App = (() => {
       });
     },
   };
+
+  function toggleRecordingOverlay(isRecording) {
+    if (isRecording) {
+      el.fullscreenRecordingOverlay.classList.remove("hidden");
+      el.fullscreenRecordingOverlay.classList.add("flex");
+    } else {
+      el.fullscreenRecordingOverlay.classList.add("hidden");
+      el.fullscreenRecordingOverlay.classList.remove("flex");
+    }
+  }
 
   function showAlert(message, type = "info") {
     const alertType =
@@ -1080,6 +1091,7 @@ const App = (() => {
         return;
       }
 
+      toggleRecordingOverlay(true);
       const mixedAudioStream = destination.stream;
 
       systemStream.getVideoTracks()[0]?.addEventListener("ended", () => {
@@ -1161,6 +1173,7 @@ const App = (() => {
           "danger"
         );
       }
+      toggleRecordingOverlay(false);
       stopSystemAudioRecording(true);
     }
   }
@@ -1171,6 +1184,7 @@ const App = (() => {
     micStreamForSystem?.getTracks().forEach((track) => track.stop());
     systemStream = micStreamForSystem = null;
 
+    toggleRecordingOverlay(false);
     toggleCoreUI(true);
 
     if (state.isRecordingMedia || isCleanup) {
@@ -1211,6 +1225,7 @@ const App = (() => {
       );
       inputQuill.root.scrollTop = inputQuill.root.scrollHeight;
 
+      toggleRecordingOverlay(true);
       toggleCoreUI(false);
       state.isDictating = true;
       el.recordBtn.innerHTML = ICONS.MIC_OFF;
@@ -1304,6 +1319,7 @@ const App = (() => {
     micStream?.getTracks().forEach((track) => track.stop());
     micStream = null;
 
+    toggleRecordingOverlay(false);
     toggleCoreUI(true);
     state.isDictating = false;
     el.recordBtn.innerHTML = ICONS.MIC_ON;

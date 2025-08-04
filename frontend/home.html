@@ -43,6 +43,22 @@
     <link rel="icon" type="image/png" sizes="16x16" href="img/3d1.png" />
   </head>
   <body class="bg-slate-50 text-slate-800">
+    <div
+      id="fullscreen-recording-overlay"
+      class="fixed inset-0 bg-black bg-opacity-75 z-50 flex-col items-center justify-center hidden"
+    >
+      <img
+        src="/img/micon.png"
+        alt="Recording Icon"
+        width="128"
+        height="128"
+        class="blinking-mic"
+      />
+      <p class="text-white text-2xl font-bold mt-4">Recording in Progress...</p>
+      <p class="text-slate-300 text-lg mt-2">
+        Click the microphone on the page to stop.
+      </p>
+    </div>
     <div id="pdf-loader">
       <div class="spinner"></div>
       <p class="text-white font-medium text-lg">Generating PDF...</p>
