@@ -18,3 +18,61 @@ main {
   border-radius: 1rem;
   padding: 2rem;
 }
+
+.hover-link {
+  color: darkgrey;
+  text-decoration: underline;
+  font-size: 0.9rem;
+  transition: color 0.3s ease, font-size 0.3s ease;
+}
+
+.hover-link:hover {
+  color: white;
+  font-size: 1rem;
+}
+
+#how-it-works-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 85%;
+  max-width: 1024px;
+  background-color: #111827;
+  box-shadow: -10px 0 25px rgba(0, 0, 0, 0.5);
+  transform: translateX(100%);
+  transition: transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+}
+
+#how-it-works-panel.is-open {
+  transform: translateX(0);
+}
+
+#panel-iframe {
+  flex-grow: 1;
+  border: none;
+  width: 100%;
+  height: 100%;
+}
+
+#close-panel-btn {
+  position: absolute;
+  top: 1rem;
+  right: 1.5rem;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 50%;
+  padding: 0.5rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  z-index: 10;
+}
+#close-panel-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.body-no-scroll {
+  overflow: hidden;
+}

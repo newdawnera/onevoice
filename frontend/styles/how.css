@@ -1,0 +1,42 @@
+@keyframes flow-current {
+  to {
+    background-position: -200% center;
+  }
+}
+
+.card-hover-wrapper {
+  position: relative;
+  padding: 2px;
+  border-radius: 1rem;
+  background: #374151;
+  transition: transform 0.3s ease;
+  height: 100%;
+}
+
+.card-hover-wrapper:hover {
+  transform: translateY(-8px);
+
+  background-image: linear-gradient(
+    90deg,
+    #374151,
+    #ca8a04,
+    #fef08a,
+    #ca8a04,
+    #374151
+  );
+  background-size: 200% auto;
+  animation: flow-current 2s linear infinite;
+}
+
+.card-content {
+  background-color: #1f2937;
+  border-radius: calc(1rem - 2px);
+  padding: 2rem;
+  height: 100%;
+  position: relative;
+  z-index: 1;
+}
+
+.leader-line {
+  z-index: -1;
+}
