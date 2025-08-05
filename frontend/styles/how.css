@@ -13,7 +13,8 @@
   height: 100%;
 }
 
-.card-hover-wrapper:hover {
+.card-hover-wrapper:hover,
+.card-hover-wrapper.is-active {
   transform: translateY(-8px);
 
   background-image: linear-gradient(
