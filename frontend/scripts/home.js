@@ -97,6 +97,7 @@ const App = (() => {
     "close-transcript-qa-btn",
     "manage-action-logs-btn",
     "fullscreen-recording-overlay",
+    "overlay-mic-icon",
     "year",
     "page-1-controls",
   ];
@@ -946,6 +947,14 @@ const App = (() => {
 
       if (state.isDictating) {
         recognition.stop();
+      }
+    });
+
+    el.overlayMicIcon.addEventListener("click", () => {
+      if (state.isDictating) {
+        stopMicRecording();
+      } else if (state.isRecordingMedia) {
+        stopSystemAudioRecording();
       }
     });
 
