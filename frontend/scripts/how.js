@@ -80,3 +80,33 @@ document.addEventListener("DOMContentLoaded", () => {
     resizeTimer = setTimeout(drawLines, 250);
   });
 });
+
+document.addEventListener("DOMContentLoaded", () => {
+  if (window.innerWidth >= 768) {
+    return;
+  }
+
+  const cards = document.querySelectorAll(".card-hover-wrapper");
+
+  const handleIntersection = (entries) => {
+    entries.forEach((entry) => {
+      if (entry.isIntersecting) {
+        cards.forEach((card) => {
+          card.classList.remove("is-active");
+        });
+
+        entry.target.classList.add("is-active");
+      }
+    });
+  };
+
+  const observer = new IntersectionObserver(handleIntersection, {
+    root: null,
+    rootMargin: "-45% 0px -45% 0px",
+    threshold: 0,
+  });
+
+  cards.forEach((card) => {
+    observer.observe(card);
+  });
+});
