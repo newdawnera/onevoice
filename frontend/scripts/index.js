@@ -15,7 +15,7 @@ document.addEventListener("DOMContentLoaded", function () {
   const welcomeMessages = [
     "Welcome to Ally, your AI Meeting Wizard!",
     "The Only Tool That Closes The Loop Between Notes & Action",
-    "From Meeting to Task Completion — Seamlessly Automated.",
+    "From Role-based Summaries to trackable Action Items - Ally got you covered.",
     "Effortlessly transform your meeting recordings and notes into summaries, action items, and insights.",
     "Upload a file, record or type notes to get started.",
   ];

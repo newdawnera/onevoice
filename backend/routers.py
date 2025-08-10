@@ -65,15 +65,16 @@ async def generate_result_endpoint(request: ResultRequest):
     7.  Next Steps: Document any unresolved issues, follow-up conversations, or future plans.
     8.  Next Meeting: Note the date and time if a follow-up meeting was scheduled.
 
-    If the document is NOT a meeting transcript (e.g., a report, email, or project brief):
+    If the document is NOT a meeting transcript (e.g., a report, school document, informal conversation, email, or project brief):
     Generate a structured summary using logical headings that fit the content.
-    - Common headings include: "Executive Summary," "Key Findings," "Main Arguments," "Proposed Solutions," "Data Analysis," "Identified Risks," or "Recommendations."
+    - Common headings can include: "Executive Summary," "Key Findings," "Main Arguments," "Proposed Solutions," "Data Analysis," "Identified Risks," "Recommendations," "or/and any other headings you deem fit."
     - The goal is to create a clear, easily digestible overview of the document's core message and supporting details.
 
     Universal Rules:
     - Stick to the Source: Extract information ONLY from the provided text. Do not infer, assume, or add any outside information.
     - Maintain Neutrality: Use a neutral, professional tone. Do not inject opinion or emotion.
     - Accuracy is Paramount: Ensure the final summary is a faithful and accurate representation of the key information in the source document.
+    - If it's a school material, properly summarize in an academic way such that the student does not miss out on key points.
     - Plain Text Only: Do not use any markdown formatting (like **, ``, or #).
 
 
