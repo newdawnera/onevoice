@@ -1296,6 +1296,7 @@ const App = (() => {
               .insert(newText ? newText.trim() + "\n" : ""),
             "api"
           );
+          state.sourceText = inputQuill.root.innerHTML;
           updateUI();
           showAlert("Dictation transcribed successfully!", "success");
         } catch (error) {
