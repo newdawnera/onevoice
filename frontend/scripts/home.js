@@ -1169,6 +1169,7 @@ const App = (() => {
             );
           }
         } finally {
+          toggleCoreUI(true);
           recordingLoaderIndex = null;
         }
       };
@@ -1194,7 +1195,6 @@ const App = (() => {
     systemStream = micStreamForSystem = null;
 
     toggleRecordingOverlay(false);
-    toggleCoreUI(true);
 
     if (state.isRecordingMedia || isCleanup) {
       state.isRecordingMedia = false;
@@ -1307,6 +1307,7 @@ const App = (() => {
             );
           }
         } finally {
+          toggleCoreUI(true);
           recordingLoaderIndex = null;
         }
       };
@@ -1331,7 +1332,7 @@ const App = (() => {
     micStream = null;
 
     toggleRecordingOverlay(false);
-    toggleCoreUI(true);
+
     state.isDictating = false;
     el.recordBtn.innerHTML = ICONS.MIC_ON;
     el.recordingIndicator.classList.add("hidden");
