@@ -214,6 +214,8 @@ const App = (() => {
     const elementsToToggle = [
       el.fileUpload,
       el.recordSystemBtn,
+      el.recordBtn,
+      el.includeMicCheckbox,
       el.unifiedLanguageSelect,
       el.nextBtn1,
       el.autocompleteToggle,
