@@ -1,5 +1,4 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.9.1/firebase-app.js";
-import { getAuth } from "https://www.gstatic.com/firebasejs/11.9.1/firebase-auth.js";
 import { getFirestore } from "https://www.gstatic.com/firebasejs/11.9.1/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -13,5 +12,7 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 
-export const auth = getAuth(app);
+// Temporary Firestore-only bridge. Firebase Auth was removed in Phase 2B.
+// Do not use this client as proof of the Supabase user's identity. The history
+// and action-item data layer remains disabled until the next migration phase.
 export const db = getFirestore(app);

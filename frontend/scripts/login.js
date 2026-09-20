@@ -1,11 +1,9 @@
-import { auth } from "./firebaseInit.js";
 import {
-  signInWithEmailAndPassword,
-  setPersistence,
-  browserLocalPersistence,
-  browserSessionPersistence,
-  sendPasswordResetEmail,
-} from "https://www.gstatic.com/firebasejs/11.9.1/firebase-auth.js";
+  readCaptchaToken,
+  requestPasswordReset,
+  requireAuthenticatedUser,
+  signIn,
+} from "./authService.js";
 
 const loginForm = document.getElementById("login-form");
 const emailInput = document.getElementById("email");
@@ -15,8 +13,6 @@ const loginButton = document.getElementById("login-button");
 const errorMessageDiv = document.getElementById("error-message");
 const successMessageDiv = document.getElementById("success-message");
 const forgotPasswordLink = document.getElementById("forgot-password-link");
-
-
 const resetModal = document.getElementById("reset-modal");
 const resetEmailInput = document.getElementById("reset-email-input");
 const cancelResetBtn = document.getElementById("cancel-reset-btn");
@@ -24,100 +20,91 @@ const sendResetBtn = document.getElementById("send-reset-btn");
 const resetErrorMessage = document.getElementById("reset-error-message");
 const resetModalMessage = document.getElementById("reset-modal-message");
 
-loginForm.addEventListener("submit", async (e) => {
-  e.preventDefault();
+function setLoginPending(pending) {
+  loginButton.disabled = pending;
+  loginButton.textContent = pending ? "Signing In..." : "Sign In";
+}
 
-  loginButton.disabled = true;
-  loginButton.textContent = "Signing In...";
+function showLoginError(message) {
+  errorMessageDiv.textContent = message;
+  errorMessageDiv.style.display = "block";
+}
+
+async function redirectAuthenticatedUser() {
+  try {
+    if (await requireAuthenticatedUser()) {
+      window.location.replace("home.html");
+    }
+  } catch {
+    showLoginError("Sign in is temporarily unavailable. Please try again later.");
+  }
+}
+
+loginForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (loginButton.disabled) return;
+
   errorMessageDiv.style.display = "none";
-
-  const email = emailInput.value;
-  const password = passwordInput.value;
+  successMessageDiv.classList.add("hidden");
+  setLoginPending(true);
 
   try {
-    const persistence = rememberMeCheckbox.checked
-      ? browserLocalPersistence
-      : browserSessionPersistence;
-    await setPersistence(auth, persistence);
+    const { data, error } = await signIn({
+      email: emailInput.value.trim().toLowerCase(),
+      password: passwordInput.value,
+      rememberUser: rememberMeCheckbox.checked,
+      captchaToken: readCaptchaToken(loginForm),
+    });
+    if (error) throw error;
+    if (!data.session) throw new Error("No usable session");
 
-    const userCredential = await signInWithEmailAndPassword(
-      auth,
-      email,
-      password
-    );
-
-
-    showSuccess("Login successful! Redirecting...");
-
-    setTimeout(() => {
-      window.location.href = "home.html";
-    }, 2000);
+    successMessageDiv.textContent = "Login successful. Redirecting...";
+    successMessageDiv.classList.remove("hidden");
+    window.setTimeout(() => window.location.replace("home.html"), 500);
   } catch (error) {
-    console.error("Login failed:", error);
-    let friendlyMessage = "An unexpected error occurred. Please try again.";
-    switch (error.code) {
-      case "auth/invalid-email":
-        friendlyMessage = "Please enter a valid email address.";
-        break;
-      case "auth/user-not-found":
-      case "auth/wrong-password":
-      case "auth/invalid-credential":
-        friendlyMessage =
-          "Invalid email or password. Please check your credentials and try again.";
-        break;
-      case "auth/too-many-requests":
-        friendlyMessage =
-          "Access to this account has been temporarily disabled due to many failed login attempts. You can immediately restore it by resetting your password or you can try again later.";
-        break;
+    if (error?.status === 429) {
+      showLoginError("Too many sign-in attempts. Please wait and try again.");
+    } else {
+      showLoginError("Invalid email or password.");
     }
-    errorMessageDiv.textContent = friendlyMessage;
-    errorMessageDiv.style.display = "block";
-
-    loginButton.disabled = false;
-    loginButton.textContent = "Sign In";
+  } finally {
+    setLoginPending(false);
   }
 });
 
-function showSuccess(message) {
-  successMessageDiv.textContent = message;
-  successMessageDiv.classList.remove("hidden");
-}
-
-const openResetModal = () => {
+function openResetModal() {
   resetModalMessage.textContent =
-    "Please enter your email address to receive a password reset link.";
+    "Enter your email address to receive a password reset link.";
   resetModalMessage.classList.remove("text-green-400");
   resetEmailInput.style.display = "block";
   cancelResetBtn.style.display = "inline-flex";
   sendResetBtn.textContent = "Send Link";
   sendResetBtn.disabled = false;
-  resetEmailInput.value = emailInput.value;
+  resetEmailInput.value = emailInput.value.trim();
   resetErrorMessage.classList.add("hidden");
   resetModal.classList.remove("hidden");
   resetModal.classList.add("flex");
-  setTimeout(() => {
-    resetModal.querySelector(".modal-content").classList.remove("scale-95");
-  }, 10);
-};
+  window.setTimeout(
+    () => resetModal.querySelector(".modal-content").classList.remove("scale-95"),
+    10
+  );
+}
 
-const closeResetModal = () => {
+function closeResetModal() {
   resetModal.querySelector(".modal-content").classList.add("scale-95");
-  setTimeout(() => {
+  window.setTimeout(() => {
     resetModal.classList.add("hidden");
     resetModal.classList.remove("flex");
   }, 300);
-};
+}
 
-forgotPasswordLink.addEventListener("click", (e) => {
-  e.preventDefault();
+forgotPasswordLink.addEventListener("click", (event) => {
+  event.preventDefault();
   openResetModal();
 });
-
 cancelResetBtn.addEventListener("click", closeResetModal);
-resetModal.addEventListener("click", (e) => {
-  if (e.target === resetModal) {
-    closeResetModal();
-  }
+resetModal.addEventListener("click", (event) => {
+  if (event.target === resetModal) closeResetModal();
 });
 
 sendResetBtn.addEventListener("click", async () => {
@@ -126,7 +113,7 @@ sendResetBtn.addEventListener("click", async () => {
     return;
   }
 
-  const email = resetEmailInput.value;
+  const email = resetEmailInput.value.trim().toLowerCase();
   if (!email) {
     resetErrorMessage.textContent = "Please enter an email address.";
     resetErrorMessage.classList.remove("hidden");
@@ -136,26 +123,33 @@ sendResetBtn.addEventListener("click", async () => {
   sendResetBtn.disabled = true;
   sendResetBtn.textContent = "Sending...";
   resetErrorMessage.classList.add("hidden");
-
   try {
-    await sendPasswordResetEmail(auth, email);
+    const { error } = await requestPasswordReset(
+      email,
+      readCaptchaToken(loginForm)
+    );
+    if (error?.status === 429) {
+      resetErrorMessage.textContent =
+        "Too many requests. Please wait before trying again.";
+      resetErrorMessage.classList.remove("hidden");
+      return;
+    }
     resetModalMessage.textContent =
-      "If an account exists for this email, a password reset link has been sent. Please check your inbox.";
+      "If an account exists for this email, a reset link will arrive shortly.";
     resetModalMessage.classList.add("text-green-400");
     resetEmailInput.style.display = "none";
     cancelResetBtn.style.display = "none";
     sendResetBtn.textContent = "Close";
+  } catch {
+    resetModalMessage.textContent =
+      "If an account exists for this email, a reset link will arrive shortly.";
+    resetModalMessage.classList.add("text-green-400");
+    resetEmailInput.style.display = "none";
+    cancelResetBtn.style.display = "none";
+    sendResetBtn.textContent = "Close";
+  } finally {
     sendResetBtn.disabled = false;
-  } catch (error) {
-    console.error("Password reset failed:", error);
-    let friendlyMessage =
-      "Could not send password reset email. Please try again.";
-    if (error.code === "auth/invalid-email") {
-      friendlyMessage = "The email address you entered is not valid.";
-    }
-    resetErrorMessage.textContent = friendlyMessage;
-    resetErrorMessage.classList.remove("hidden");
-    sendResetBtn.disabled = false;
-    sendResetBtn.textContent = "Send Link";
   }
 });
+
+redirectAuthenticatedUser();

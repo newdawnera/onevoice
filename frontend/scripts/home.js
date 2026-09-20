@@ -1,15 +1,24 @@
 import { initializeApp } from "./appLogic.js";
-import {
-  collection,
-  addDoc,
-  doc,
-  writeBatch,
-  serverTimestamp,
-} from "https://www.gstatic.com/firebasejs/11.9.1/firebase-firestore.js";
+import { authenticatedJson } from "./apiClient.js";
+import DOMPurify from "https://cdn.jsdelivr.net/npm/dompurify@3.4.15/+esm";
 
 const App = (() => {
-  const MY_API = "https://ally-back.onrender.com";
-  let db, currentUser;
+  let currentUser;
+
+  const RICH_TEXT_POLICY = Object.freeze({
+    ALLOWED_TAGS: [
+      "a", "blockquote", "br", "code", "em", "h1", "h2", "h3",
+      "li", "ol", "p", "pre", "s", "span", "strong", "sub", "sup",
+      "u", "ul",
+    ],
+    ALLOWED_ATTR: ["href", "title", "class"],
+    ALLOW_DATA_ATTR: false,
+    FORBID_TAGS: ["iframe", "object", "embed", "script", "style", "video"],
+    FORBID_ATTR: ["style"],
+  });
+
+  const sanitizeRichHtml = (value) =>
+    DOMPurify.sanitize(String(value || ""), RICH_TEXT_POLICY);
 
   const state = {
     currentPage: 1,
@@ -128,17 +137,13 @@ const App = (() => {
   const api = {
     async handleReq(endpoint, options) {
       try {
-        const response = await fetch(`${MY_API}${endpoint}`, options);
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({
-            detail: `HTTP error! Status: ${response.status}`,
-          }));
-          throw new Error(errorData.detail);
-        }
-        return response.json();
+        return await authenticatedJson(endpoint, options);
       } catch (error) {
-        console.error(`API Error on ${endpoint}:`, error);
-        showAlert(error.message, "danger");
+        const message =
+          error?.status === 429 && error?.retryAfter
+            ? `Too many requests. Try again in ${error.retryAfter} seconds.`
+            : error?.message || "The request could not be completed.";
+        showAlert(message, "danger");
         throw error;
       }
     },
@@ -201,7 +206,16 @@ const App = (() => {
     const tempId = `alert-${Date.now()}`;
     const alertEl = document.createElement("div");
     alertEl.id = tempId;
-    alertEl.innerHTML = `<div class="${alertType} border-l-4 p-4" role="alert"><p class="font-bold">${title}</p><p>${message}</p></div>`;
+    const panel = document.createElement("div");
+    panel.className = `${alertType} border-l-4 p-4`;
+    panel.setAttribute("role", "alert");
+    const heading = document.createElement("p");
+    heading.className = "font-bold";
+    heading.textContent = title;
+    const body = document.createElement("p");
+    body.textContent = String(message || "");
+    panel.append(heading, body);
+    alertEl.appendChild(panel);
     el.alertContainer.appendChild(alertEl);
     setTimeout(() => document.getElementById(tempId)?.remove(), 5000);
   }
@@ -232,31 +246,31 @@ const App = (() => {
   }
 
   function saveStateToLocalStorage() {
-    if (!currentUser || !currentUser.uid) return;
+    if (!currentUser || !currentUser.id) return;
     const stateToSave = {
-      sourceText: state.sourceText,
-      result: state.result,
+      sourceText: sanitizeRichHtml(state.sourceText),
+      result: sanitizeRichHtml(state.result),
       plainTextResult: state.plainTextResult,
       emailSubject: state.emailSubject,
       currentPage: state.currentPage,
     };
     localStorage.setItem(
-      `aiMeetingWizardState_${currentUser.uid}`,
+      `aiMeetingWizardState_${currentUser.id}`,
       JSON.stringify(stateToSave)
     );
   }
 
   function loadStateFromLocalStorage() {
-    if (!currentUser || !currentUser.uid) return;
+    if (!currentUser || !currentUser.id) return;
     try {
       const savedState = localStorage.getItem(
-        `aiMeetingWizardState_${currentUser.uid}`
+        `aiMeetingWizardState_${currentUser.id}`
       );
       if (savedState) {
         const parsedState = JSON.parse(savedState);
 
-        state.sourceText = parsedState.sourceText || "";
-        state.result = parsedState.result || "";
+        state.sourceText = sanitizeRichHtml(parsedState.sourceText);
+        state.result = sanitizeRichHtml(parsedState.result);
         state.plainTextResult = parsedState.plainTextResult || "";
         state.emailSubject = parsedState.emailSubject || "";
         state.currentPage = parsedState.currentPage || 1;
@@ -270,7 +284,7 @@ const App = (() => {
       }
     } catch (error) {
       console.error("Could not load state from local storage:", error);
-      localStorage.removeItem(`aiMeetingWizardState_${currentUser.uid}`);
+      localStorage.removeItem(`aiMeetingWizardState_${currentUser.id}`);
     }
   }
 
@@ -293,7 +307,7 @@ const App = (() => {
       ? inputQuill.getLength() <= 1 && !state.fileName
       : !state.fileName;
     const tempDiv = document.createElement("div");
-    tempDiv.innerHTML = state.sourceText;
+    tempDiv.innerHTML = sanitizeRichHtml(state.sourceText);
     el.sourceTextPreview.textContent = tempDiv.innerText;
 
     if (
@@ -301,7 +315,7 @@ const App = (() => {
       quill &&
       quill.getSemanticHTML() !== state.result
     ) {
-      quill.clipboard.dangerouslyPasteHTML(state.result);
+      quill.clipboard.dangerouslyPasteHTML(sanitizeRichHtml(state.result));
     }
     renderExportButtons(el.exportResult, quill, "summary");
     renderExportButtons(el.exportTranscript, inputQuill, "transcript");
@@ -428,12 +442,8 @@ const App = (() => {
       );
       const newText = data.transcription || data.text || "";
 
-      if (inputQuill)
-        inputQuill.clipboard.dangerouslyPasteHTML(
-          newText.replace(/\n/g, "<br>"),
-          "api"
-        );
-      state.sourceText = inputQuill.root.innerHTML;
+      if (inputQuill) inputQuill.setText(newText, "api");
+      state.sourceText = sanitizeRichHtml(inputQuill.root.innerHTML);
       updateUI();
       showAlert(
         "File processed successfully! Review the content and click 'Process Content'.",
@@ -536,7 +546,7 @@ const App = (() => {
     toggleGeneratingControls(true);
 
     const tempDiv = document.createElement("div");
-    tempDiv.innerHTML = state.sourceText;
+    tempDiv.innerHTML = sanitizeRichHtml(state.sourceText);
     const sourceTextForAI = tempDiv.innerText;
 
     try {
@@ -546,14 +556,16 @@ const App = (() => {
         target_language: language,
       });
 
-      state.result = data.formatted_result;
+      state.result = sanitizeRichHtml(data.formatted_result);
       state.plainTextResult = data.plain_text_summary;
       state.emailSubject = data.email_subject;
       showAlert("Result generated!", "success");
       goToPage(3);
 
-      const extractedActions = await extractAndStoreActions();
-      await saveToHistory(extractedActions);
+      showAlert(
+        "History and action-item saving is temporarily unavailable during the data migration.",
+        "info"
+      );
     } catch (error) {
     } finally {
       toggleGeneratingControls(false);
@@ -590,74 +602,8 @@ const App = (() => {
     }
   }
 
-  async function saveToHistory(actionLogs) {
-    if (!currentUser || !state.sourceText || !state.result) return;
-    try {
-      const historyCollectionRef = collection(
-        db,
-        `users/${currentUser.uid}/history`
-      );
-      await addDoc(historyCollectionRef, {
-        transcript: state.sourceText,
-        summary: state.result,
-        actionLogs: actionLogs || [],
-        createdAt: serverTimestamp(),
-      });
-      showAlert("Meeting record saved to your history.", "success");
-    } catch (error) {
-      console.error("Error saving to history:", error);
-      showAlert("Could not save record to your history.", "danger");
-    }
-  }
-
-  async function extractAndStoreActions() {
-    if (!currentUser || !state.plainTextResult) return [];
-    try {
-      const actionItemsData = await api.aiHelper(
-        "extract_actions",
-        { summary: state.plainTextResult },
-        true
-      );
-
-      if (!Array.isArray(actionItemsData) || actionItemsData.length === 0)
-        return [];
-
-      const actionLogsCollectionRef = collection(
-        db,
-        `users/${currentUser.uid}/actionLogs`
-      );
-      const batch = writeBatch(db);
-      actionItemsData.forEach((itemData) => {
-        const docRef = doc(actionLogsCollectionRef);
-        batch.set(docRef, {
-          title: itemData.task || "Untitled Task",
-          assignee: itemData.assignee || "Unassigned",
-          assigneeEmail: itemData.assigneeEmail || null,
-          status: "Generated from Summary",
-          startDate: itemData.startDate || null,
-          deadline: itemData.deadline || null,
-          createdAt: serverTimestamp(),
-        });
-      });
-      await batch.commit();
-      showAlert(
-        `Successfully extracted and stored ${actionItemsData.length} action items.`,
-        "success"
-      );
-      return actionItemsData;
-    } catch (e) {
-      console.error("Error extracting and storing action items:", e);
-      showAlert(
-        "Could not automatically extract action items from the summary.",
-        "danger"
-      );
-      return [];
-    }
-  }
-
-  function init(user, database) {
+  function init(user) {
     currentUser = user;
-    db = database;
 
     initCoreApp();
   }
@@ -734,9 +680,14 @@ const App = (() => {
       static create(value) {
         let node = super.create();
         node.setAttribute("contenteditable", "false");
-        node.innerHTML = `<div class="ql-transcribing-loader"><div class="spinner"></div><span>${
-          value || "Transcribing audio..."
-        }</span></div>`;
+        const loader = document.createElement("div");
+        loader.className = "ql-transcribing-loader";
+        const spinner = document.createElement("div");
+        spinner.className = "spinner";
+        const message = document.createElement("span");
+        message.textContent = value || "Transcribing audio...";
+        loader.append(spinner, message);
+        node.appendChild(loader);
         return node;
       }
       static value(node) {
@@ -814,7 +765,7 @@ const App = (() => {
     resultEditorWrapper.prepend(resultToolbar);
     quill.on("text-change", (delta, oldDelta, source) => {
       if (source === "user") {
-        state.result = quill.getSemanticHTML();
+        state.result = sanitizeRichHtml(quill.getSemanticHTML());
         state.plainTextResult = quill.getText();
         renderExportButtons(el.exportResult, quill, "summary");
         saveStateToLocalStorage();
@@ -843,7 +794,7 @@ const App = (() => {
     inputEditorWrapper.prepend(inputToolbar);
     inputQuill.on("text-change", (delta, oldDelta, source) => {
       if (source === "user") {
-        state.sourceText = inputQuill.root.innerHTML;
+        state.sourceText = sanitizeRichHtml(inputQuill.root.innerHTML);
         if (state.fileName) {
           state.fileName = "";
           el.fileName.textContent = "";
@@ -1160,7 +1111,7 @@ const App = (() => {
             "api"
           );
 
-          state.sourceText = inputQuill.root.innerHTML;
+          state.sourceText = sanitizeRichHtml(inputQuill.root.innerHTML);
           updateUI();
           if (newText) showAlert("Media transcribed successfully!", "success");
         } catch (error) {
@@ -1298,7 +1249,7 @@ const App = (() => {
               .insert(newText ? newText.trim() + "\n" : ""),
             "api"
           );
-          state.sourceText = inputQuill.root.innerHTML;
+          state.sourceText = sanitizeRichHtml(inputQuill.root.innerHTML);
           updateUI();
           showAlert("Dictation transcribed successfully!", "success");
         } catch (error) {
@@ -1435,7 +1386,7 @@ const App = (() => {
               "api"
             );
           });
-        state.sourceText = inputQuill.root.innerHTML;
+        state.sourceText = sanitizeRichHtml(inputQuill.root.innerHTML);
         state.isStructured = true;
         updateUI();
         showAlert("Topics detected and labeled in the text.", "success");
@@ -1538,7 +1489,7 @@ const App = (() => {
       badge.className = "file-preview-badge";
       badge.textContent = file.name;
       const removeBtn = document.createElement("button");
-      removeBtn.innerHTML = "&times;";
+      removeBtn.textContent = "×";
       removeBtn.onclick = (e) => {
         e.stopPropagation();
         removeFile(i);
@@ -1577,7 +1528,7 @@ const App = (() => {
     for (const file of fileStore.files) finalAttachments.items.add(file);
 
     const tempDiv = document.createElement("div");
-    tempDiv.innerHTML = emailQuill.root.innerHTML;
+    tempDiv.innerHTML = sanitizeRichHtml(emailQuill.root.innerHTML);
     const images = tempDiv.querySelectorAll("img");
     let imageCounter = 0;
 
@@ -1958,6 +1909,6 @@ const App = (() => {
   };
 })();
 
-initializeApp((user, db) => {
-  App.init(user, db);
+initializeApp((user) => {
+  App.init(user);
 });

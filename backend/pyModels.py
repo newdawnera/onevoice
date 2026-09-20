@@ -1,22 +1,33 @@
+"""Validated request models for the public API."""
 
-# This file defines the structure of the data I expect to get from the frontend.
-from pydantic import BaseModel
-from typing import Optional, Dict
+from __future__ import annotations
 
-class ResultRequest(BaseModel):
-    text: str
-    role: Optional[str] = None
-    target_language: Optional[str] = None
+from typing import Any, Literal, Optional
+from uuid import UUID
 
-class AiHelperRequest(BaseModel):
-    task_type: str
-    context: Dict
-    is_json: Optional[bool] = False
+from pydantic import BaseModel, ConfigDict, Field
 
-class ManualEmailRequest(BaseModel):
-    task: dict
-    userId: str
 
-class WelcomeEmailRequest(BaseModel):
-    email: str
-    username: str
+class StrictRequestModel(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=False)
+
+
+class ResultRequest(StrictRequestModel):
+    text: str = Field(min_length=1, max_length=100_000)
+    role: Optional[str] = Field(default=None, max_length=100)
+    target_language: Optional[str] = Field(default=None, max_length=100)
+
+
+class AiHelperRequest(StrictRequestModel):
+    task_type: Literal[
+        "autocomplete",
+        "q_and_a",
+        "detect_topics",
+        "extract_actions",
+    ]
+    context: dict[str, Any]
+    is_json: bool = False
+
+
+class ManualReminderRequest(StrictRequestModel):
+    action_item_id: UUID

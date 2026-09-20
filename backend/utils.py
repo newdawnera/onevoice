@@ -238,48 +238,9 @@ async def send_welcome_email(recipient_email, username):
     await send_email_via_brevo(recipient_email, subject, html_content, sender_name="Ally")
 
 
-async def send_reminder_email(task_data, user_id, task_id, reminder_type):
-    if not config.reminder_template:
-        logger.error("Reminder email template is not loaded. Cannot send reminder.")
-        return
+async def send_reminder_email(*_args, **_kwargs):
+    """Fail closed until signed links and Supabase action ownership exist."""
 
-    recipient_email = task_data.get("assigneeEmail")
-    if not recipient_email:
-        logger.warning(f"Task {task_id} has no assignee email. Skipping reminder.")
-        return
-
-    subject, reminder_message = "", ""
-    base_url = os.getenv("MY_API", "https://ally-back.onrender.com")
-    update_url = f"{base_url}/update-task-status"
-    in_progress_url = f"{update_url}?userId={user_id}&taskId={task_id}&newStatus=In Progress"
-    completed_url = f"{update_url}?userId={user_id}&taskId={task_id}&newStatus=Completed"
-    task_title = task_data.get('title', 'N/A')
-    start_date_str = task_data.get('startDate', 'N/A')
-    deadline_str = task_data.get('deadline', 'N/A')
-
-    if reminder_type == "start_date":
-        subject = f"Reminder: Task '{task_title}' is scheduled to start today!"
-        reminder_message = f"This is a reminder that your task, <strong>{task_title}</strong>, is scheduled to begin today, {start_date_str}."
-    elif reminder_type == "before_deadline":
-        subject = f"Reminder: Task '{task_title}' is due tomorrow!"
-        reminder_message = f"This is a friendly reminder that your task, <strong>{task_title}</strong>, is due tomorrow, {deadline_str}."
-    elif reminder_type == "deadline":
-        subject = f"URGENT: Task '{task_title}' is due today!"
-        reminder_message = f"This is an urgent reminder that your task, <strong>{task_title}</strong>, is due today, {deadline_str}."
-    elif reminder_type == "manual_notification":
-        subject = f"Notification: A message about your task '{task_title}'"
-        reminder_message = f"This is a notification regarding your task: <strong>{task_title}</strong>. Please review the details and update its status as needed."
-
-    email_body = config.reminder_template
-    email_body = email_body.replace("[REMINDER_SUBJECT]", html.escape(subject))
-    email_body = email_body.replace("[PREHEADER_TEXT]", html.escape(subject))
-    email_body = email_body.replace("[ASSIGNEE_NAME]", html.escape(task_data.get('assignee', 'Team Member')))
-    email_body = email_body.replace("[REMINDER_MESSAGE_HTML]", reminder_message)
-    email_body = email_body.replace("[TASK_TITLE]", html.escape(task_title))
-    email_body = email_body.replace("[TASK_START_DATE]", html.escape(start_date_str))
-    email_body = email_body.replace("[TASK_DEADLINE]", html.escape(deadline_str))
-    email_body = email_body.replace("[IN_PROGRESS_URL]", in_progress_url)
-    email_body = email_body.replace("[COMPLETED_URL]", completed_url)
-    email_body = email_body.replace("[CURRENT_YEAR]", str(datetime.now().year))
-    
-    await send_email_via_brevo(recipient_email, subject, email_body, sender_name="Ally, your AI Meeting Wizard")
+    raise RuntimeError(
+        "Reminder delivery is disabled until the action-item data migration."
+    )
