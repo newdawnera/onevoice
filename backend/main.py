@@ -17,7 +17,7 @@ app.add_middleware(
     allow_origins=list(settings.cors_origins),
     allow_credentials=False,
     allow_methods=["GET", "POST", "HEAD", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "Accept"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "Idempotency-Key"],
     expose_headers=["Retry-After"],
     max_age=600,
 )
@@ -25,7 +25,15 @@ app.add_middleware(
 
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
-    response = await call_next(request)
+    try:
+        response = await call_next(request)
+    finally:
+        # The raw status token is needed for routing, but the ASGI server's
+        # access logger runs after this middleware. Mutating the shared scope at
+        # that point prevents the bearer token from appearing in its request
+        # line while leaving endpoint parsing untouched.
+        if request.url.path == "/action-status" and request.scope.get("query_string"):
+            request.scope["query_string"] = b"token=%5BREDACTED%5D"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "no-referrer"
     response.headers["X-Frame-Options"] = "DENY"

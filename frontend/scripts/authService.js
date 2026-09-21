@@ -118,10 +118,3 @@ export async function processAuthRedirect() {
     clearTransientAuthStorage();
   }
 }
-
-export function readCaptchaToken(form) {
-  if (!runtimeConfig.captchaSiteKey) return undefined;
-  const input = form.querySelector('[name="captcha-token"]');
-  const token = input?.value?.trim();
-  return token || undefined;
-}

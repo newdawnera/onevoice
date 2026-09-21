@@ -4,6 +4,7 @@ import {
   requireAuthenticatedUser,
   signOut,
 } from "./authService.js";
+import { stopAllSubscriptions } from "./dataService.js";
 
 function initializeSidebar() {
   const menuButton = document.getElementById("menu-button");
@@ -59,6 +60,7 @@ function initializeLogout(user) {
     if (button.disabled) return;
     button.disabled = true;
     localStorage.removeItem(`aiMeetingWizardState_${user.id}`);
+    stopAllSubscriptions();
     try {
       await signOut();
     } finally {
@@ -92,6 +94,7 @@ export async function initializeApp(pageSpecificLogic) {
   const unsubscribe = onAuthStateChange((event, session) => {
     queueMicrotask(() => {
       if (event === "SIGNED_OUT" || !session) {
+        stopAllSubscriptions();
         redirectToLogin();
       } else if (event === "PASSWORD_RECOVERY") {
         window.location.replace("reset-password.html");
@@ -100,5 +103,12 @@ export async function initializeApp(pageSpecificLogic) {
       // the centralized API client reads the current session for each request.
     });
   });
-  window.addEventListener("pagehide", unsubscribe, { once: true });
+  window.addEventListener(
+    "pagehide",
+    () => {
+      stopAllSubscriptions();
+      unsubscribe();
+    },
+    { once: true }
+  );
 }

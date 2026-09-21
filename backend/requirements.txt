@@ -8,7 +8,7 @@ pypdf
 python-docx
 beautifulsoup4
 httpx
-firebase-admin
 PyJWT[crypto]==2.14.0
 bleach==6.4.0
 email-validator==2.3.0
+qstash==3.4.0

@@ -1,31 +1,48 @@
 from __future__ import annotations
 
 import base64
-import hmac
 import html
 import json
 import logging
 import os
+import re
+import time
 from email_validator import EmailNotValidError, validate_email
 from pathlib import Path
 from typing import Annotated
+from urllib.parse import parse_qs, urlparse
+from uuid import UUID
 
 import bleach
 import httpx
 from bs4 import BeautifulSoup
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Request, UploadFile
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 import config
 import utils
 from auth import AuthenticatedUser, get_current_user
 from config import Settings, get_settings
-from pyModels import AiHelperRequest, ManualReminderRequest, ResultRequest
+from pyModels import AiHelperRequest, ResultRequest
+from qstash_auth import (
+    QStashRequestVerifier,
+    QStashVerificationRejected,
+    QStashVerificationUnavailable,
+    get_qstash_verifier,
+)
 from rate_limit import (
     AI_RATE_LIMIT,
     DOCUMENT_RATE_LIMIT,
     EMAIL_RATE_LIMIT,
+    REMINDER_RATE_LIMIT,
     TRANSCRIPTION_RATE_LIMIT,
+)
+from reminders import (
+    ReminderInfrastructureError,
+    ReminderService,
+    StatusPostRateLimiter,
+    get_reminder_service,
+    get_status_post_limiter,
 )
 
 
@@ -34,6 +51,9 @@ logger = logging.getLogger(__name__)
 
 Authenticated = Annotated[AuthenticatedUser, Depends(get_current_user)]
 AppSettings = Annotated[Settings, Depends(get_settings)]
+ReminderWorkflow = Annotated[ReminderService, Depends(get_reminder_service)]
+QStashVerifier = Annotated[QStashRequestVerifier, Depends(get_qstash_verifier)]
+StatusLimiter = Annotated[StatusPostRateLimiter, Depends(get_status_post_limiter)]
 
 AUDIO_EXTENSIONS = {".mp3", ".wav", ".mp4", ".m4a", ".webm", ".ogg"}
 AUDIO_MIME_TYPES = {
@@ -76,6 +96,8 @@ EMAIL_ALLOWED_TAGS = {
 }
 EMAIL_ALLOWED_ATTRIBUTES = {"a": ["href", "title"]}
 MAX_EMAIL_ATTACHMENTS = 5
+STATUS_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{43,128}$")
+MAX_STATUS_POST_BYTES = 2048
 
 
 def _megabytes(value: int) -> int:
@@ -223,7 +245,7 @@ async def generate_result_endpoint(
     except HTTPException:
         raise HTTPException(status_code=502, detail="AI processing failed.")
     except Exception as exc:
-        logger.exception("AI generation failed.")
+        logger.warning("AI generation failed.")
         raise HTTPException(status_code=502, detail="AI processing failed.") from exc
 
     formatted_lines = []
@@ -241,6 +263,8 @@ async def generate_result_endpoint(
         "formatted_result": "".join(formatted_lines),
         "email_subject": email_subject[: settings.max_email_subject_chars],
         "plain_text_summary": summary,
+        "ai_provider": utils.AI_PROVIDER,
+        "ai_model": utils.AI_MODEL,
     }
 
 
@@ -287,7 +311,7 @@ async def ai_helper_endpoint(
             prompt, is_json=request.is_json
         )
     except Exception as exc:
-        logger.exception("AI helper failed.")
+        logger.warning("AI helper failed.")
         raise HTTPException(status_code=502, detail="AI processing failed.") from exc
 
     if not request.is_json:
@@ -442,30 +466,48 @@ async def send_welcome_email_endpoint(current_user: Authenticated):
     )
 
 
-def _require_scheduler(request: Request, settings: Settings) -> None:
+@router.post("/internal/reminders/run", summary="Signed internal reminder worker")
+async def task_reminder_scheduler(
+    request: Request,
+    verifier: QStashVerifier,
+    workflow: ReminderWorkflow,
+):
     if request.headers.get("origin") is not None:
         raise HTTPException(status_code=403, detail="Request not allowed.")
-    if not settings.scheduler_secret:
-        raise HTTPException(status_code=503, detail="Scheduler route is unavailable.")
-    values = request.headers.getlist("authorization")
-    if len(values) != 1:
+    signatures = request.headers.getlist("upstash-signature")
+    if len(signatures) != 1:
         raise HTTPException(status_code=401, detail="Unauthorized.")
-    parts = values[0].strip().split()
-    if (
-        len(parts) != 2
-        or parts[0].lower() != "bearer"
-        or not hmac.compare_digest(parts[1], settings.scheduler_secret)
-    ):
-        raise HTTPException(status_code=401, detail="Unauthorized.")
+    raw_body = await request.body()
+    try:
+        verifier.verify(raw_body=raw_body, signature=signatures[0])
+    except QStashVerificationUnavailable as exc:
+        raise HTTPException(
+            status_code=503, detail="Reminder worker is unavailable."
+        ) from exc
+    except QStashVerificationRejected as exc:
+        raise HTTPException(status_code=401, detail="Unauthorized.") from exc
+
+    try:
+        payload = json.loads(raw_body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid worker request.") from exc
+    if not isinstance(payload, dict) or set(payload) - {"version"}:
+        raise HTTPException(status_code=400, detail="Invalid worker request.")
+    if payload.get("version", 1) != 1:
+        raise HTTPException(status_code=400, detail="Invalid worker request.")
+
+    try:
+        counts = await workflow.run_scheduled()
+    except ReminderInfrastructureError as exc:
+        raise HTTPException(
+            status_code=503, detail="Reminder processing is temporarily unavailable."
+        ) from exc
+    return {"status": "processed", **counts}
 
 
-@router.get("/send-task-reminders", summary="Internal reminder scheduler")
-async def task_reminder_scheduler(request: Request, settings: AppSettings):
-    _require_scheduler(request, settings)
-    raise HTTPException(
-        status_code=503,
-        detail="Scheduled reminders are disabled until the reminder data migration.",
-    )
+@router.get("/send-task-reminders", summary="Removed legacy reminder scheduler")
+async def legacy_task_reminder_scheduler():
+    raise HTTPException(status_code=410, detail="This scheduler route was removed.")
 
 
 @router.api_route(
@@ -480,21 +522,209 @@ async def update_task_status_disabled():
     )
 
 
-@router.post("/send-manual-reminder", summary="Manual task reminder")
+@router.post(
+    "/action-items/{action_item_id}/reminders",
+    summary="Request a server-owned action reminder",
+)
 async def send_manual_reminder_endpoint(
-    request: ManualReminderRequest,
+    request: Request,
+    action_item_id: UUID,
     current_user: Authenticated,
+    workflow: ReminderWorkflow,
+    _rate_limit: Annotated[None, Depends(REMINDER_RATE_LIMIT)],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ):
-    del request, current_user
-    raise HTTPException(
-        status_code=503,
-        detail="Manual reminders are disabled until action-item migration is complete.",
+    del _rate_limit
+    body = await request.body()
+    if body.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Reminder requests must not contain action or recipient data.",
+        )
+    try:
+        parsed_key = UUID(idempotency_key or "")
+    except (ValueError, TypeError, AttributeError) as exc:
+        raise HTTPException(
+            status_code=400, detail="A valid Idempotency-Key UUID is required."
+        ) from exc
+
+    try:
+        result = await workflow.request_manual(
+            user_id=current_user.id,
+            action_item_id=action_item_id,
+            idempotency_key=parsed_key,
+        )
+    except ReminderInfrastructureError as exc:
+        raise HTTPException(
+            status_code=503, detail="Reminder processing is temporarily unavailable."
+        ) from exc
+
+    if result["outcome"] == "not_found":
+        raise HTTPException(status_code=404, detail="Action item not found.")
+    if result["outcome"] == "incompatible":
+        raise HTTPException(
+            status_code=409,
+            detail="This Idempotency-Key was already used for another request.",
+        )
+    if result["outcome"] == "ineligible":
+        raise HTTPException(
+            status_code=409, detail="A reminder cannot be sent for this action item."
+        )
+
+    public_result = {
+        "delivery_id": result.get("delivery_id"),
+        "status": result.get("status"),
+        "attempt_count": result.get("attempt_count"),
+        "next_attempt_at": result.get("next_attempt_at"),
+    }
+    status_code = 200 if result.get("status") == "sent" else 202
+    return JSONResponse(status_code=status_code, content=public_result)
+
+
+@router.post("/send-manual-reminder", summary="Removed legacy manual reminder")
+async def legacy_manual_reminder_endpoint(current_user: Authenticated):
+    del current_user
+    raise HTTPException(status_code=410, detail="This reminder route was removed.")
+
+
+def _status_headers(response: HTMLResponse) -> HTMLResponse:
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; "
+        "base-uri 'none'; frame-ancestors 'none'"
+    )
+    return response
+
+
+def _status_page(title: str, message: str, form: str = "") -> HTMLResponse:
+    document = f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{html.escape(title)}</title><style>
+body{{font-family:system-ui,sans-serif;background:#f8fafc;color:#172033;margin:0;display:grid;min-height:100vh;place-items:center}}
+main{{background:#fff;border:1px solid #dbe3ec;border-radius:12px;max-width:32rem;padding:2rem;margin:1rem;box-shadow:0 8px 24px rgba(15,23,42,.08)}}
+button{{background:#2563eb;border:0;border-radius:8px;color:#fff;font-weight:700;padding:.75rem 1rem;cursor:pointer}}
+</style></head><body><main><h1>{html.escape(title)}</h1><p>{html.escape(message)}</p>{form}</main></body></html>"""
+    return _status_headers(HTMLResponse(document))
+
+
+def _valid_status_token(value: str) -> bool:
+    return bool(STATUS_TOKEN_PATTERN.fullmatch(value))
+
+
+@router.get("/action-status", response_class=HTMLResponse, summary="Confirm an action status")
+async def confirm_action_status(workflow: ReminderWorkflow, token: str = ""):
+    if not _valid_status_token(token):
+        return _status_page(
+            "Link unavailable",
+            "This status link is invalid, expired, revoked, or already used.",
+        )
+    try:
+        inspected = await workflow.inspect_status_token(token)
+    except ReminderInfrastructureError:
+        response = _status_page(
+            "Temporarily unavailable", "Please try this link again later."
+        )
+        response.status_code = 503
+        return response
+    if not inspected.get("valid"):
+        return _status_page(
+            "Link unavailable",
+            "This status link is invalid, expired, revoked, or already used.",
+        )
+    target = inspected.get("target_status")
+    label = "Completed" if target == "completed" else "In Progress"
+    form = (
+        '<form action="/action-status" method="post">'
+        f'<input type="hidden" name="token" value="{html.escape(token, quote=True)}">'
+        f'<button type="submit">Confirm {html.escape(label)}</button></form>'
+    )
+    return _status_page(
+        "Confirm status change",
+        f"Confirm that this action should be marked {label}.",
+        form,
     )
 
 
-@router.get("/firebase-config", summary="Deprecated Firebase configuration")
-async def get_firebase_config():
-    raise HTTPException(
-        status_code=410,
-        detail="Firebase Auth configuration is no longer available.",
+def _same_origin(value: str, expected_origin: str) -> bool:
+    try:
+        parsed = urlparse(value)
+        actual = f"{parsed.scheme}://{parsed.netloc}"
+    except ValueError:
+        return False
+    return actual == expected_origin
+
+
+@router.post("/action-status", summary="Consume an action-status token")
+async def consume_action_status(
+    request: Request,
+    settings: AppSettings,
+    workflow: ReminderWorkflow,
+    limiter: StatusLimiter,
+):
+    client_identity = request.client.host if request.client else "unknown"
+    if not await limiter.allow(client_identity, time.monotonic()):
+        raise HTTPException(status_code=429, detail="Too many requests.")
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > MAX_STATUS_POST_BYTES:
+                raise HTTPException(status_code=413, detail="Request too large.")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Invalid request.") from exc
+
+    expected = urlparse(settings.api_public_url)
+    expected_origin = f"{expected.scheme}://{expected.netloc}" if expected.netloc else ""
+    if request.headers.get("sec-fetch-site") == "cross-site":
+        raise HTTPException(status_code=403, detail="Request not allowed.")
+    origin = request.headers.get("origin")
+    referer = request.headers.get("referer")
+    if expected_origin and origin and not _same_origin(origin, expected_origin):
+        raise HTTPException(status_code=403, detail="Request not allowed.")
+    if expected_origin and referer and not _same_origin(referer, expected_origin):
+        raise HTTPException(status_code=403, detail="Request not allowed.")
+
+    raw_body = await request.body()
+    if len(raw_body) > MAX_STATUS_POST_BYTES:
+        raise HTTPException(status_code=413, detail="Request too large.")
+    media_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    try:
+        if media_type == "application/x-www-form-urlencoded":
+            values = parse_qs(raw_body.decode("utf-8"), keep_blank_values=True)
+            if set(values) != {"token"} or len(values["token"]) != 1:
+                raise ValueError
+            token = values["token"][0]
+        elif media_type == "application/json":
+            payload = json.loads(raw_body.decode("utf-8"))
+            if not isinstance(payload, dict) or set(payload) != {"token"}:
+                raise ValueError
+            token = payload["token"]
+        else:
+            raise HTTPException(status_code=415, detail="Unsupported content type.")
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid request.") from exc
+    if not isinstance(token, str) or not _valid_status_token(token):
+        return RedirectResponse("/action-status/result?outcome=unavailable", status_code=303)
+    try:
+        result = await workflow.consume_status_token(token)
+    except ReminderInfrastructureError as exc:
+        raise HTTPException(
+            status_code=503, detail="Status updates are temporarily unavailable."
+        ) from exc
+    outcome = "updated" if result.get("updated") else "unavailable"
+    return RedirectResponse(f"/action-status/result?outcome={outcome}", status_code=303)
+
+
+@router.get("/action-status/result", response_class=HTMLResponse, summary="Action-status result")
+async def action_status_result(outcome: str = "unavailable"):
+    if outcome == "updated":
+        return _status_page(
+            "Status updated", "The action status was updated successfully."
+        )
+    return _status_page(
+        "Link unavailable",
+        "This status link is invalid, expired, revoked, or already used.",
     )

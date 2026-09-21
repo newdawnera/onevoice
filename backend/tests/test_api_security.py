@@ -8,7 +8,8 @@ from auth import AuthenticatedUser, get_current_user
 from config import get_settings
 from conftest import configured_settings
 from main import app
-from pyModels import ManualReminderRequest, ResultRequest
+from pyModels import ResultRequest
+from rate_limit import REMINDER_RATE_LIMIT
 
 
 USER = AuthenticatedUser(
@@ -45,8 +46,8 @@ def test_public_health_endpoint_remains_public():
         ("post", "/send-welcome-email", {}),
         (
             "post",
-            "/send-manual-reminder",
-            {"json": {"action_item_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc"}},
+            "/action-items/cccccccc-cccc-4ccc-8ccc-cccccccccccc/reminders",
+            {"headers": {"Idempotency-Key": "dddddddd-dddd-4ddd-8ddd-dddddddddddd"}},
         ),
     ],
 )
@@ -55,35 +56,32 @@ def test_user_facing_routes_reject_missing_auth(method, path, kwargs):
     assert response.status_code == 401
 
 
-def test_scheduler_fails_closed_when_secret_is_missing():
-    app.dependency_overrides[get_settings] = lambda: configured_settings(
-        scheduler_secret=""
-    )
+def test_scheduler_fails_closed_when_signing_configuration_is_missing():
+    app.dependency_overrides[get_settings] = lambda: configured_settings()
     try:
-        response = client.get("/send-task-reminders")
+        response = client.post(
+            "/internal/reminders/run",
+            content="{}",
+            headers={"Upstash-Signature": "not-a-token"},
+        )
         assert response.status_code == 503
     finally:
         app.dependency_overrides.pop(get_settings, None)
 
 
-def test_scheduler_rejects_invalid_secret():
-    app.dependency_overrides[get_settings] = lambda: configured_settings(
-        scheduler_secret="test-scheduler-secret"
+def test_scheduler_has_no_static_bearer_fallback_and_legacy_get_is_removed():
+    response = client.post(
+        "/internal/reminders/run",
+        content="{}",
+        headers={"Authorization": "Bearer old-secret"},
     )
-    try:
-        assert client.get("/send-task-reminders").status_code == 401
-        response = client.get(
-            "/send-task-reminders",
-            headers={"Authorization": "Bearer wrong-secret"},
-        )
-        assert response.status_code == 401
-    finally:
-        app.dependency_overrides.pop(get_settings, None)
+    assert response.status_code == 401
+    assert client.get("/send-task-reminders").status_code == 410
 
 
-def test_legacy_status_and_firebase_config_routes_are_disabled():
+def test_legacy_status_route_is_disabled_and_firebase_config_is_removed():
     assert client.get("/update-task-status?userId=x&taskId=y&newStatus=z").status_code == 410
-    assert client.get("/firebase-config").status_code == 410
+    assert client.get("/firebase-config").status_code == 404
 
 
 def test_caller_supplied_user_id_is_rejected_by_models():
@@ -91,23 +89,16 @@ def test_caller_supplied_user_id_is_rejected_by_models():
         ResultRequest.model_validate({"text": "hello", "userId": "someone-else"})
 
 
-def test_manual_reminder_rejects_browser_task_data():
-    with pytest.raises(ValidationError):
-        ManualReminderRequest.model_validate(
-            {
-                "userId": "someone-else",
-                "task": {"id": "x", "assigneeEmail": "victim@example.com"},
-            }
-        )
-
-
-def test_manual_reminder_is_authenticated_but_disabled():
+def test_manual_reminder_rejects_browser_owned_task_data():
     app.dependency_overrides[get_current_user] = lambda: USER
+    app.dependency_overrides[REMINDER_RATE_LIMIT] = lambda: None
     try:
         response = client.post(
-            "/send-manual-reminder",
-            json={"action_item_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc"},
+            "/action-items/cccccccc-cccc-4ccc-8ccc-cccccccccccc/reminders",
+            headers={"Idempotency-Key": "dddddddd-dddd-4ddd-8ddd-dddddddddddd"},
+            json={"userId": str(USER.id), "recipient": "victim@example.com"},
         )
-        assert response.status_code == 503
+        assert response.status_code == 400
     finally:
         app.dependency_overrides.pop(get_current_user, None)
+        app.dependency_overrides.pop(REMINDER_RATE_LIMIT, None)

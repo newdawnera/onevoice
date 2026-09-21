@@ -7,29 +7,25 @@ representation and from startup logging.
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from urllib.parse import urlparse
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-import firebase_admin
 import google.generativeai as genai
 from dotenv import load_dotenv
-from firebase_admin import credentials, firestore
 
 
 load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-db = None
 welcome_template = None
 email_template = None
 reminder_template = None
-success_template = None
 
 
 def _positive_int(name: str, default: int) -> int:
@@ -40,6 +36,15 @@ def _positive_int(name: str, default: int) -> int:
         raise RuntimeError(f"{name} must be an integer.") from exc
     if value <= 0:
         raise RuntimeError(f"{name} must be greater than zero.")
+    return value
+
+
+def _bounded_int(name: str, default: int, minimum: int, maximum: int) -> int:
+    value = _positive_int(name, default)
+    if not minimum <= value <= maximum:
+        raise RuntimeError(
+            f"{name} must be between {minimum} and {maximum}."
+        )
     return value
 
 
@@ -64,7 +69,21 @@ class Settings:
     supabase_jwt_verification_mode: str
     supabase_jwt_algorithms: tuple[str, ...]
     cors_origins: tuple[str, ...]
-    scheduler_secret: str = field(repr=False)
+    api_public_url: str
+    qstash_current_signing_key: str = field(repr=False)
+    qstash_next_signing_key: str = field(repr=False)
+    qstash_token: str = field(repr=False)
+    qstash_schedule_id: str
+    reminder_cron: str
+    reminder_timezone: str
+    reminder_batch_size: int
+    reminder_max_attempts: int
+    reminder_lease_seconds: int
+    reminder_retry_base_seconds: int
+    action_status_link_ttl_hours: int
+    brevo_api_key: str = field(repr=False)
+    sender_email: str
+    sender_name: str
     auth_jwks_cache_seconds: int
     max_document_upload_mb: int
     max_audio_upload_mb: int
@@ -81,6 +100,7 @@ class Settings:
     rate_limit_document_upload_per_minute: int
     rate_limit_email_per_hour: int
     rate_limit_welcome_email_per_day: int
+    rate_limit_reminder_per_hour: int
 
     @property
     def is_production(self) -> bool:
@@ -97,6 +117,18 @@ class Settings:
     @property
     def rest_url(self) -> str:
         return f"{self.supabase_url.rstrip('/')}/rest/v1"
+
+    @property
+    def reminder_run_url(self) -> str:
+        return f"{self.api_public_url.rstrip('/')}/internal/reminders/run"
+
+    @property
+    def qstash_verification_configured(self) -> bool:
+        return bool(
+            self.api_public_url
+            and self.qstash_current_signing_key
+            and self.qstash_next_signing_key
+        )
 
     def validate_for_startup(self) -> None:
         if self.app_env not in {"development", "test", "production"}:
@@ -121,6 +153,35 @@ class Settings:
                 raise RuntimeError("SUPABASE_URL must be an absolute HTTP(S) URL.")
             if self.is_production and parsed.scheme != "https":
                 raise RuntimeError("SUPABASE_URL must use HTTPS in production.")
+
+        if self.api_public_url:
+            parsed = urlparse(self.api_public_url)
+            if (
+                parsed.scheme not in {"http", "https"}
+                or not parsed.netloc
+                or parsed.username
+                or parsed.password
+                or parsed.query
+                or parsed.fragment
+                or parsed.path not in {"", "/"}
+            ):
+                raise RuntimeError(
+                    "API_PUBLIC_URL must be an origin-only absolute HTTP(S) URL."
+                )
+            if self.is_production and parsed.scheme != "https":
+                raise RuntimeError("API_PUBLIC_URL must use HTTPS in production.")
+
+        try:
+            ZoneInfo(self.reminder_timezone)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise RuntimeError("REMINDER_TIMEZONE is not a valid IANA timezone.") from exc
+
+        if bool(self.qstash_current_signing_key) != bool(
+            self.qstash_next_signing_key
+        ):
+            raise RuntimeError(
+                "Both QStash signing keys must be configured together."
+            )
 
         if not self.is_production:
             return
@@ -176,7 +237,37 @@ def get_settings() -> Settings:
             "CORS_ORIGINS",
             "http://localhost:5500,http://127.0.0.1:5500",
         ),
-        scheduler_secret=os.getenv("SCHEDULER_SECRET", "").strip(),
+        api_public_url=os.getenv("API_PUBLIC_URL", "").strip().rstrip("/"),
+        qstash_current_signing_key=os.getenv(
+            "QSTASH_CURRENT_SIGNING_KEY", ""
+        ).strip(),
+        qstash_next_signing_key=os.getenv(
+            "QSTASH_NEXT_SIGNING_KEY", ""
+        ).strip(),
+        qstash_token=os.getenv("QSTASH_TOKEN", "").strip(),
+        qstash_schedule_id=os.getenv("QSTASH_SCHEDULE_ID", "").strip(),
+        reminder_cron=os.getenv("REMINDER_CRON", "").strip(),
+        reminder_timezone=os.getenv(
+            "REMINDER_TIMEZONE", "Europe/London"
+        ).strip(),
+        reminder_batch_size=_bounded_int("REMINDER_BATCH_SIZE", 50, 1, 200),
+        reminder_max_attempts=_bounded_int(
+            "REMINDER_MAX_ATTEMPTS", 4, 1, 10
+        ),
+        reminder_lease_seconds=_bounded_int(
+            "REMINDER_LEASE_SECONDS", 180, 60, 900
+        ),
+        reminder_retry_base_seconds=_bounded_int(
+            "REMINDER_RETRY_BASE_SECONDS", 60, 5, 3600
+        ),
+        action_status_link_ttl_hours=_bounded_int(
+            "ACTION_STATUS_LINK_TTL_HOURS", 72, 1, 168
+        ),
+        brevo_api_key=os.getenv("BREVO_API_KEY", "").strip(),
+        sender_email=os.getenv("SENDER_EMAIL", "").strip(),
+        sender_name=os.getenv(
+            "SENDER_NAME", "Ally, your AI Meeting Wizard"
+        ).strip(),
         auth_jwks_cache_seconds=_positive_int("AUTH_JWKS_CACHE_SECONDS", 600),
         max_document_upload_mb=_positive_int("MAX_DOCUMENT_UPLOAD_MB", 10),
         max_audio_upload_mb=_positive_int("MAX_AUDIO_UPLOAD_MB", 100),
@@ -209,35 +300,12 @@ def get_settings() -> Settings:
         rate_limit_welcome_email_per_day=_positive_int(
             "RATE_LIMIT_WELCOME_EMAIL_PER_DAY", 1
         ),
+        rate_limit_reminder_per_hour=_bounded_int(
+            "RATE_LIMIT_REMINDER_PER_HOUR", 10, 1, 100
+        ),
     )
     settings.validate_for_startup()
     return settings
-
-
-def setup_legacy_firestore() -> None:
-    """Initialise the temporary Firestore data client if explicitly needed.
-
-    Supabase Auth never delegates authentication to this client. Phase 2B does
-    not call this function; it remains solely for the later data migration.
-    """
-
-    global db
-    raw_credentials = os.getenv("FIREBASE_CREDENTIALS_JSON", "").strip()
-    if not raw_credentials:
-        db = None
-        return
-    try:
-        if not firebase_admin._apps:
-            cred = credentials.Certificate(json.loads(raw_credentials))
-            firebase_admin.initialize_app(
-                cred,
-                {"projectId": os.getenv("FIREBASE_PROJECT_ID", "alliance-2025")},
-            )
-        db = firestore.client()
-        logger.info("Legacy Firestore data client connected.")
-    except Exception:
-        logger.exception("Legacy Firestore data client could not be initialised.")
-        db = None
 
 
 def setup_gemini_api() -> None:
@@ -252,14 +320,13 @@ def setup_gemini_api() -> None:
 
 
 def load_html_templates() -> None:
-    global welcome_template, email_template, reminder_template, success_template
+    global welcome_template, email_template, reminder_template
 
     template_dir = Path(__file__).resolve().parent / "templates"
     names = {
         "welcome_template": "welcome-email-template.html",
         "email_template": "email-template.html",
         "reminder_template": "task-reminder-email-template.html",
-        "success_template": "success.html",
     }
     for variable_name, filename in names.items():
         try:

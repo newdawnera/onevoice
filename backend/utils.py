@@ -16,6 +16,9 @@ from langdetect import detect, LangDetectException
 
 logger = logging.getLogger(__name__)
 
+AI_PROVIDER = "google_gemini"
+AI_MODEL = "gemini-2.5-flash"
+
 
 DEFAULT_ROLES = {    
     "general overview", "No Selection", "general", "normal", "full review", "default", "standard", "all", "overall", "unfiltered", "everyone", "comprehensive"
@@ -103,7 +106,7 @@ async def transcribe_with_assemblyai(file: UploadFile, language: str):
 
 
 
-async def generate_gemini_content(prompt: str, model_name: str = "gemini-2.5-flash", is_json: bool = False):
+async def generate_gemini_content(prompt: str, model_name: str = AI_MODEL, is_json: bool = False):
     try:
         model = genai.GenerativeModel(model_name)
         response_type = "application/json" if is_json else "text/plain"
@@ -236,11 +239,3 @@ async def send_welcome_email(recipient_email, username):
     html_content = html_content.replace("[CURRENT_YEAR]", str(datetime.now().year))
     
     await send_email_via_brevo(recipient_email, subject, html_content, sender_name="Ally")
-
-
-async def send_reminder_email(*_args, **_kwargs):
-    """Fail closed until signed links and Supabase action ownership exist."""
-
-    raise RuntimeError(
-        "Reminder delivery is disabled until the action-item data migration."
-    )

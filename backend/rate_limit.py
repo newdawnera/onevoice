@@ -156,3 +156,6 @@ DOCUMENT_RATE_LIMIT = enforce_rate_limits(
 EMAIL_RATE_LIMIT = enforce_rate_limits(
     RateLimitSpec("email_hour", "rate_limit_email_per_hour", 3_600)
 )
+REMINDER_RATE_LIMIT = enforce_rate_limits(
+    RateLimitSpec("reminder_hour", "rate_limit_reminder_per_hour", 3_600)
+)

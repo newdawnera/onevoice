@@ -1,5 +1,9 @@
 import { initializeApp } from "./appLogic.js";
 import { authenticatedJson } from "./apiClient.js";
+import {
+  normalizeExtractedActions,
+  saveMeetingWithActions,
+} from "./dataService.js";
 import DOMPurify from "https://cdn.jsdelivr.net/npm/dompurify@3.4.15/+esm";
 
 const App = (() => {
@@ -27,6 +31,8 @@ const App = (() => {
     plainTextResult: "",
     emailSubject: "",
     fileName: "",
+    sourceType: "text",
+    pendingMeetingSave: null,
     isDictating: false,
     isRecordingMedia: false,
     isAutocompleteEnabled: false,
@@ -220,6 +226,52 @@ const App = (() => {
     setTimeout(() => document.getElementById(tempId)?.remove(), 5000);
   }
 
+  function showMeetingSaveRetry() {
+    const wrapper = document.createElement("div");
+    wrapper.id = "meeting-save-retry";
+    const panel = document.createElement("div");
+    panel.className = "bg-red-100 border-red-500 text-red-700 border-l-4 p-4";
+    panel.setAttribute("role", "alert");
+    const heading = document.createElement("p");
+    heading.className = "font-bold";
+    heading.textContent = "Saving failed";
+    const body = document.createElement("p");
+    body.textContent =
+      "Your generated result is still available. Retry the same save without regenerating it.";
+    const retry = document.createElement("button");
+    retry.type = "button";
+    retry.className =
+      "mt-3 rounded-md bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-800";
+    retry.textContent = "Retry saving";
+    retry.addEventListener("click", async () => {
+      retry.disabled = true;
+      retry.textContent = "Saving…";
+      const saved = await persistPendingMeeting();
+      if (!saved) {
+        retry.disabled = false;
+        retry.textContent = "Retry saving";
+      }
+    });
+    panel.append(heading, body, retry);
+    wrapper.appendChild(panel);
+    document.getElementById(wrapper.id)?.remove();
+    el.alertContainer.appendChild(wrapper);
+  }
+
+  function sourceTypeForFile(file) {
+    if (file?.type?.startsWith("video/")) return "video";
+    if (file?.type?.startsWith("audio/")) return "audio";
+    const extension = String(file?.name || "")
+      .split(".")
+      .pop()
+      .toLocaleLowerCase();
+    if (["mp4", "mov", "mkv", "avi"].includes(extension)) return "video";
+    if (["mp3", "wav", "m4a", "webm", "ogg"].includes(extension)) {
+      return "audio";
+    }
+    return "document";
+  }
+
   function toggleCoreUI(shouldBeEnabled) {
     if (inputQuill) {
       inputQuill.enable(shouldBeEnabled);
@@ -252,6 +304,8 @@ const App = (() => {
       result: sanitizeRichHtml(state.result),
       plainTextResult: state.plainTextResult,
       emailSubject: state.emailSubject,
+      fileName: state.fileName,
+      sourceType: state.sourceType,
       currentPage: state.currentPage,
     };
     localStorage.setItem(
@@ -273,6 +327,17 @@ const App = (() => {
         state.result = sanitizeRichHtml(parsedState.result);
         state.plainTextResult = parsedState.plainTextResult || "";
         state.emailSubject = parsedState.emailSubject || "";
+        state.fileName = parsedState.fileName || "";
+        state.sourceType = [
+          "text",
+          "document",
+          "audio",
+          "video",
+          "microphone",
+          "system_audio",
+        ].includes(parsedState.sourceType)
+          ? parsedState.sourceType
+          : "text";
         state.currentPage = parsedState.currentPage || 1;
 
         if (inputQuill && state.sourceText) {
@@ -280,6 +345,9 @@ const App = (() => {
         }
         if (quill && state.result) {
           quill.clipboard.dangerouslyPasteHTML(state.result);
+        }
+        if (el.fileName && state.fileName) {
+          el.fileName.textContent = `File: ${state.fileName}`;
         }
       }
     } catch (error) {
@@ -420,6 +488,8 @@ const App = (() => {
     const file = e.target.files[0];
     if (!file) return;
     state.fileName = file.name;
+    state.sourceType = sourceTypeForFile(file);
+    state.pendingMeetingSave = null;
     el.fileName.textContent = "File: " + file.name;
     state.sourceText = "";
     state.isStructured = false;
@@ -534,12 +604,58 @@ const App = (() => {
     }
   }
 
+  async function extractActionsForSave() {
+    if (!state.plainTextResult?.trim()) return { actions: [], failed: false };
+    try {
+      const response = await api.aiHelper(
+        "extract_actions",
+        { summary: state.plainTextResult },
+        true
+      );
+      return { actions: normalizeExtractedActions(response), failed: false };
+    } catch {
+      return { actions: [], failed: true };
+    }
+  }
+
+  async function persistPendingMeeting() {
+    const pending = state.pendingMeetingSave;
+    if (!pending || pending.saving) return false;
+    pending.saving = true;
+    try {
+      await saveMeetingWithActions(pending.payload);
+      document.getElementById("meeting-save-retry")?.remove();
+      state.pendingMeetingSave = null;
+      if (pending.extractionFailed) {
+        showAlert(
+          "Meeting saved without action items because automatic extraction was unavailable.",
+          "info"
+        );
+      } else if (pending.payload.actions.length) {
+        showAlert(
+          `Meeting and ${pending.payload.actions.length} action item${
+            pending.payload.actions.length === 1 ? "" : "s"
+          } saved securely.`,
+          "success"
+        );
+      } else {
+        showAlert("Meeting saved to your history.", "success");
+      }
+      return true;
+    } catch {
+      showMeetingSaveRetry();
+      return false;
+    } finally {
+      pending.saving = false;
+    }
+  }
+
   async function handleGetResult() {
-    let role =
+    const role =
       el.roleSelect.value === "Other"
         ? el.roleOtherInput.value.trim()
         : el.roleSelect.value;
-    let language =
+    const language =
       el.langSelect.value === "Other"
         ? el.langOtherInput.value.trim()
         : el.langSelect.value;
@@ -562,11 +678,28 @@ const App = (() => {
       showAlert("Result generated!", "success");
       goToPage(3);
 
-      showAlert(
-        "History and action-item saving is temporarily unavailable during the data migration.",
-        "info"
-      );
-    } catch (error) {
+      const extracted = await extractActionsForSave();
+      state.pendingMeetingSave = {
+        extractionFailed: extracted.failed,
+        saving: false,
+        payload: {
+          clientRequestId: crypto.randomUUID(),
+          sourceType: state.sourceType,
+          sourceFilename: state.fileName || null,
+          sourceHtml: sanitizeRichHtml(state.sourceText),
+          sourceText: sourceTextForAI,
+          summaryHtml: sanitizeRichHtml(state.result),
+          summaryText: state.plainTextResult,
+          emailSubject: state.emailSubject || null,
+          requestedRole: role || null,
+          targetLanguage: language || null,
+          aiProvider: data.ai_provider || null,
+          aiModel: data.ai_model || null,
+          actions: extracted.actions,
+        },
+      };
+      await persistPendingMeeting();
+    } catch {
     } finally {
       toggleGeneratingControls(false);
     }
@@ -800,6 +933,8 @@ const App = (() => {
           el.fileName.textContent = "";
           el.fileUpload.value = "";
         }
+        state.sourceType = "text";
+        state.pendingMeetingSave = null;
         state.isStructured = false;
         updateUI();
         saveStateToLocalStorage();
@@ -835,6 +970,8 @@ const App = (() => {
         plainTextResult: "",
         emailSubject: "",
         fileName: "",
+        sourceType: "text",
+        pendingMeetingSave: null,
         isStructured: false,
       });
       if (inputQuill) inputQuill.setContents([], "api");
@@ -1112,6 +1249,9 @@ const App = (() => {
           );
 
           state.sourceText = sanitizeRichHtml(inputQuill.root.innerHTML);
+          state.sourceType = "system_audio";
+          state.fileName = "";
+          state.pendingMeetingSave = null;
           updateUI();
           if (newText) showAlert("Media transcribed successfully!", "success");
         } catch (error) {
@@ -1250,6 +1390,9 @@ const App = (() => {
             "api"
           );
           state.sourceText = sanitizeRichHtml(inputQuill.root.innerHTML);
+          state.sourceType = "microphone";
+          state.fileName = "";
+          state.pendingMeetingSave = null;
           updateUI();
           showAlert("Dictation transcribed successfully!", "success");
         } catch (error) {

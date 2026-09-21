@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 from typing import Any, Literal, Optional
-from uuid import UUID
-
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -27,7 +25,3 @@ class AiHelperRequest(StrictRequestModel):
     ]
     context: dict[str, Any]
     is_json: bool = False
-
-
-class ManualReminderRequest(StrictRequestModel):
-    action_item_id: UUID

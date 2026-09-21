@@ -12,7 +12,7 @@ const config = Object.freeze({
   publicFrontendBaseUrl: isLocalDevelopment
     ? window.location.origin
     : "https://ally-vimd.onrender.com",
-  captchaSiteKey: "",
+  captchaSiteKey: "8114ffbe-45f0-4fe2-989c-a2009946fa88",
 });
 
 function isPlaceholder(value) {

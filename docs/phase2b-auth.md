@@ -2,9 +2,11 @@
 
 Phase 2B replaces browser Firebase Authentication with Supabase Auth and makes
 the existing FastAPI AI, transcription, document, and email routes require a
-verified Supabase user. It does **not** migrate historical Firestore meetings or
-actions. History, action management, and reminder delivery remain deliberately
-disabled until that separate data-migration phase.
+verified Supabase user. Phase 2C subsequently migrated new meeting/action
+operations and removed the Firebase runtime; see
+[phase2c-data-migration.md](phase2c-data-migration.md). Phase 2D then enabled
+reminders behind the controls in
+[phase2d-reminders.md](phase2d-reminders.md).
 
 ## Architecture
 
@@ -38,6 +40,9 @@ Public:
 
 - `GET /`
 - `GET|HEAD /health`
+- `GET /action-status` (read-only token inspection and confirmation page)
+- `POST /action-status` (single-use token consumption)
+- `GET /action-status/result` (token-free result page)
 
 Authenticated Supabase user:
 
@@ -47,20 +52,20 @@ Authenticated Supabase user:
 - `POST /ai-helper`
 - `POST /send-email/`
 - `POST /send-welcome-email` (authenticated but intentionally returns `410`)
-- `POST /send-manual-reminder` (accepts only an action-item UUID and
-  intentionally returns `503` until action data is migrated)
+- `POST /action-items/{action_item_id}/reminders` (empty body plus a UUID
+  `Idempotency-Key`; all authoritative data is loaded server-side)
 
 Internal machine route:
 
-- `GET /send-task-reminders` rejects browser-origin requests, requires the
-  independent scheduler bearer secret, and currently returns `503` after
-  authentication because reminder data has not been migrated.
+- `POST /internal/reminders/run` rejects browser-origin requests and requires an
+  exact QStash signature over the raw body and configured destination URL.
 
 Disabled legacy routes:
 
 - `GET|POST /update-task-status` returns `410`; an unauthenticated email link
   can no longer mutate task state.
-- `GET /firebase-config` returns `410`.
+- `GET /send-task-reminders` and `POST /send-manual-reminder` return `410`.
+- The legacy `/firebase-config` route was removed in Phase 2C and returns `404`.
 
 ## Default API limits
 
@@ -104,7 +109,9 @@ phase:
 - Hosted OTP/magic-link verification rate limit: 30 requests per five minutes.
 - The Auth email rate-limit value was not confirmed while SMTP remained
   incomplete; review and set it against the verified Brevo allowance.
-- CAPTCHA: disabled.
+- CAPTCHA: hCaptcha enabled by the project owner on 2026-09-21. The public
+  sitekey is configured in `frontend/scripts/runtimeConfig.js`; the private
+  hCaptcha secret remains only in the hosted Supabase Auth configuration.
 - Leaked-password protection: disabled.
 - Custom SMTP: enabled with Brevo host `smtp-relay.brevo.com`, port `587`,
   sender name `Ally`, and a 60-second per-user interval. The sender email and
@@ -118,9 +125,12 @@ The HTML files in the repository are application pages; they do not configure
 Supabase Auth email templates. Review each Auth email template and its links in
 the dashboard separately.
 
-For public release, also enable CAPTCHA and leaked-password protection after
-creating the relevant provider/site keys. CAPTCHA support is intentionally
-inactive while `captchaSiteKey` is blank.
+The login, signup, and password-reset request flows render independent hCaptcha
+widgets and send their single-use response token to the corresponding Supabase
+Auth call. Each widget clears expired tokens and resets after every request.
+The hCaptcha secret must never be copied into frontend configuration, source
+control, or application logs. Leaked-password protection remains disabled
+because it requires a higher Supabase plan.
 
 ## Deployment configuration
 
@@ -136,10 +146,11 @@ origins. Use:
 - `SUPABASE_JWT_ALGORITHMS=ES256`
 - `CORS_ORIGINS=http://localhost:5500,http://127.0.0.1:5500,https://ally-vimd.onrender.com`
 
-Supply `SUPABASE_SERVICE_ROLE_KEY`, the existing AI/transcription/email
-provider secrets, and (only when scheduling is enabled) a unique
-`SCHEDULER_SECRET` in Render's secret settings. Do not reuse a Supabase key as
-the scheduler secret. Leaving the scheduler secret blank disables that route.
+Supply `SUPABASE_SERVICE_ROLE_KEY` and the existing AI/transcription/email
+provider secrets. Reminder deployment additionally requires the server-only
+QStash and Brevo variables documented in
+[phase2d-reminders.md](phase2d-reminders.md). The former `SCHEDULER_SECRET` is no
+longer used; inbound scheduler authority comes only from QStash signatures.
 
 ## Verification
 
@@ -154,8 +165,8 @@ npx supabase db query --linked --file supabase/tests/database/phase2b_rate_limit
 
 The backend test suite covers malformed and duplicate authorization headers,
 algorithm and key-ID rejection, invalid and expired claims, valid ES256 access,
-JWKS rotation, explicit legacy verification, protected routes, scheduler
-authorization, rate-limit allow/deny/outage behavior, and rejection of
+JWKS rotation, explicit legacy verification, protected routes,
+rate-limit allow/deny/outage behavior, and rejection of
 caller-supplied user IDs.
 
 The isolated frontend module suite covers controlled remembered/session-only
@@ -177,21 +188,21 @@ After SMTP and deployment variables are complete, manually test:
 4. `429` behavior and `Retry-After`, plus upload/body/attachment limits.
 5. Cross-origin rejection from any origin not in the exact allow list.
 
-## Remaining security work and migration boundary
+## Remaining security work and Phase 2C follow-up
 
-- Firestore code remains only as a temporary, non-authenticated data-migration
-  boundary. Phase 2B does not initialize it in backend startup, and current
-  frontend flows do not import it. Historical meetings/actions are untouched.
+- Phase 2C removed Firestore/Firebase runtime code. No repository/workspace
+  export was available, so historical meetings/actions were not imported.
 - As with any static SPA using Supabase Auth, the active session is readable by
   same-origin JavaScript. The targeted DOM sanitization in this phase reduces
   risk but does not replace the later strict-CSP and dependency-bundling work.
-- History, actions, and reminders must not be re-enabled until ownership has
-  been migrated to Supabase rows and verified against `auth.users.id`.
+- History and action CRUD are enabled under Phase 2C grants plus RLS. Phase 2D
+  adds signed scheduler execution and expiring, replay-controlled status links.
 - A strict Content Security Policy is not yet practical because existing pages
   still use runtime Tailwind, several third-party CDN scripts/styles, inline
   styles, and one inline module. Self-host or bundle these assets and remove or
   nonce/hash inline code before adding a restrictive CSP. Configure HSTS at the
   HTTPS hosting layer after confirming all production subdomains support HTTPS.
-- Custom SMTP, Auth email-template customization, CAPTCHA, leaked-password
-  protection, deployment secrets, and end-to-end email flows require the
-  manual hosted-service work described above.
+- Custom SMTP, Auth email-template customization, leaked-password protection,
+  deployment secrets, and end-to-end email flows require the manual
+  hosted-service work described above. CAPTCHA still requires a production
+  browser smoke test after deployment.

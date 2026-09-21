@@ -1,10 +1,16 @@
 # Supabase setup
 
-Phase 2A created the database foundation. Phase 2B now replaces browser
-Firebase Authentication and protects the existing backend routes, but it still
-does not migrate historical Firebase meeting/action data. See
+Phase 2A created the database foundation. Phase 2B replaced browser Firebase
+Authentication and protected the backend routes. Phase 2C stores new meeting
+history and action items in Supabase and removes Firebase runtime code. Phase
+2D adds the durable reminder state machine and hashed status tokens.
+No historical Firebase export was available to import. See
 [phase2b-auth.md](phase2b-auth.md) for the Auth architecture, route matrix,
-rate limits, hosted-dashboard status, verification, and remaining manual work.
+rate limits, hosted-dashboard status, verification, and remaining manual work,
+and [phase2c-data-migration.md](phase2c-data-migration.md) for the application
+data, grants, RLS, atomicity, and Realtime design. See
+[phase2d-reminders.md](phase2d-reminders.md) for reminder delivery, QStash,
+status-link security, and deployment operations.
 
 ## CLI workflow
 
@@ -32,6 +38,19 @@ npx supabase db query --linked --file supabase/tests/database/phase2a_security_s
 
 # Run the rollback-only shared rate-limit smoke test.
 npx supabase db query --linked --file supabase/tests/database/phase2b_rate_limit_smoke.sql
+
+# Run the rollback-only Phase 2C allow/deny and atomic-save test.
+npx supabase db query --linked --file supabase/tests/database/phase2c_security_smoke.sql
+
+# Run the Phase 2C pgTAP contract through the supported test wrapper.
+# Docker Desktop's Linux engine must be running on Windows.
+npx supabase test db --linked supabase/tests/database/phase2c_contract_test.sql
+
+# Run the rollback-only Phase 2D state-machine/security smoke test.
+npx supabase db query --linked --file supabase/tests/database/phase2d_security_smoke.sql
+
+# Validate the Phase 2D schema/grant contract (or use `supabase test db` with Docker).
+npx supabase db query --linked --file supabase/tests/database/phase2d_contract_test.sql
 ```
 
 Do not run `supabase db reset --linked`; it destroys remote data.
@@ -50,6 +69,9 @@ through the deployment platform. Never commit real values.
 - `SUPABASE_JWT_ISSUER`: issuer used by the backend when validating Supabase
   access tokens.
 - `SUPABASE_JWT_AUDIENCE`: expected access-token audience (`authenticated`).
+- `API_PUBLIC_URL`, QStash verification/schedule values, Brevo delivery values,
+  and reminder bounds are documented in
+  [phase2d-reminders.md](phase2d-reminders.md). Keep all secret values server-only.
 
 ## Database model
 
@@ -61,13 +83,17 @@ through the deployment platform. Never commit real values.
   prevents an action from referencing another user's meeting.
 - `reminder_deliveries`: backend-only reminder attempts and idempotency/audit
   records.
+- `action_status_tokens`: hashes of expiring, single-use status links; raw tokens
+  are never stored.
 
 RLS is enabled on all four public tables. Authenticated users can read and
-update only their own profile and can create, read, update, and delete only
-their own meetings and actions. Anonymous clients receive no table grants.
-`reminder_deliveries` has no browser policy or browser grant; it is reserved for
-trusted backend use. The service-role key bypasses RLS and must remain on the
-server.
+update only the safe field on their own profile, read only their own meetings,
+and create/update/delete only their own actions through restricted columns.
+Meeting creation uses the authenticated-only atomic RPC described in the Phase
+2C guide. Anonymous clients receive no table grants.
+`reminder_deliveries` and `action_status_tokens` have no browser policy or
+browser grant; both are reserved for narrow service-role functions. The
+service-role key bypasses RLS and must remain on the server.
 
 ## Manual Supabase dashboard actions
 

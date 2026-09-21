@@ -83,17 +83,19 @@ begin
 end;
 $test$;
 
-insert into public.meeting_records (id, user_id, source_text)
+insert into public.meeting_records (id, user_id, source_text, summary_text)
 values
   (
     '10000000-0000-4000-8000-00000000000a',
     '00000000-0000-4000-8000-00000000000a',
-    'User A rollback-only meeting'
+    'User A rollback-only meeting',
+    'User A rollback-only summary'
   ),
   (
     '10000000-0000-4000-8000-00000000000b',
     '00000000-0000-4000-8000-00000000000b',
-    'User B rollback-only meeting'
+    'User B rollback-only meeting',
+    'User B rollback-only summary'
   );
 
 insert into public.action_items (id, user_id, meeting_id, title)
@@ -173,13 +175,18 @@ begin
     raise exception 'User A can see another user''s action';
   end if;
 
-  update public.meeting_records
-  set summary_text = 'Forbidden cross-user update'
-  where id = '10000000-0000-4000-8000-00000000000b';
-  get diagnostics changed_rows = row_count;
-  if changed_rows <> 0 then
-    raise exception 'User A updated User B''s meeting';
-  end if;
+  begin
+    update public.meeting_records
+    set summary_text = 'Forbidden cross-user update'
+    where id = '10000000-0000-4000-8000-00000000000b';
+    get diagnostics changed_rows = row_count;
+    if changed_rows <> 0 then
+      raise exception 'User A updated User B''s meeting';
+    end if;
+  exception
+    -- Phase 2C removes the browser meeting UPDATE grant entirely.
+    when insufficient_privilege then null;
+  end;
 
   delete from public.action_items
   where id = '20000000-0000-4000-8000-00000000000b';
