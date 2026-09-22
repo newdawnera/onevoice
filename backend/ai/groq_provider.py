@@ -74,6 +74,19 @@ class GroqProvider:
         return [{"role": item.role, "content": item.content} for item in messages]
 
     @staticmethod
+    def _reasoning_options(model: str) -> dict[str, Any]:
+        """Keep bounded product tasks from spending their output budget on reasoning.
+
+        GPT-OSS defaults to medium reasoning on Groq. Short tasks such as
+        autocomplete can otherwise finish with ``length`` before emitting any
+        user-visible content. Reasoning remains enabled at the model's lowest
+        supported level and is omitted from the response payload.
+        """
+        if model.startswith("openai/gpt-oss-"):
+            return {"reasoning_effort": "low", "include_reasoning": False}
+        return {}
+
+    @staticmethod
     def _map_error(error: Exception) -> Exception:
         if isinstance(error, (groq.AuthenticationError, groq.PermissionDeniedError)):
             return AIAuthenticationError("provider authentication failed")
@@ -138,6 +151,7 @@ class GroqProvider:
                 temperature=temperature,
                 max_completion_tokens=max_output_tokens,
                 stream=False,
+                **self._reasoning_options(self.text_model),
             )
         except Exception as error:
             mapped = self._map_error(error)
@@ -168,6 +182,7 @@ class GroqProvider:
                     },
                 },
                 stream=False,
+                **self._reasoning_options(self.structured_model),
             )
         except Exception as error:
             mapped = self._map_error(error)

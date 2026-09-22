@@ -214,6 +214,23 @@ class MeetingAIOutput(StrictModel):
         return value
 
 
+class TopicAnchorSuggestion(StrictModel):
+    topic: str = Field(min_length=1, max_length=200)
+    anchor: str = Field(min_length=1, max_length=200)
+
+    @field_validator("topic", "anchor")
+    @classmethod
+    def validate_plain_text(cls, value: str) -> str:
+        value = normalize_text(value, allow_newlines=False)
+        if HTML_PATTERN.search(value):
+            raise ValueError("HTML is not allowed")
+        return value
+
+
+class TopicsAIOutput(StrictModel):
+    topics: list[TopicAnchorSuggestion]
+
+
 class TopicSuggestion(StrictModel):
     topic: str = Field(min_length=1, max_length=200)
     index: int = Field(ge=0)
@@ -225,10 +242,6 @@ class TopicSuggestion(StrictModel):
         if HTML_PATTERN.search(value):
             raise ValueError("HTML is not allowed")
         return value
-
-
-class TopicsAIOutput(StrictModel):
-    topics: list[TopicSuggestion]
 
 
 class PublicAction(StrictModel):

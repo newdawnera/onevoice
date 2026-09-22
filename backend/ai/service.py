@@ -129,6 +129,23 @@ def _split_naturally(text: str, chunk_chars: int, max_chunks: int) -> list[str]:
     return chunks
 
 
+def _find_anchor_index(text: str, anchor: str) -> int | None:
+    """Resolve an AI-provided verbatim anchor to an original source index."""
+    exact = text.find(anchor)
+    if exact >= 0:
+        return exact
+
+    case_insensitive = re.search(re.escape(anchor), text, flags=re.IGNORECASE)
+    if case_insensitive:
+        return case_insensitive.start()
+
+    words = [re.escape(part) for part in re.split(r"\s+", anchor.strip()) if part]
+    if not words:
+        return None
+    whitespace_flexible = re.search(r"\s+".join(words), text, flags=re.IGNORECASE)
+    return whitespace_flexible.start() if whitespace_flexible else None
+
+
 class AIService:
     def __init__(self, settings: Settings, provider: AIProvider, store: Any) -> None:
         self.settings = settings
@@ -368,7 +385,7 @@ class AIService:
         payload = json.dumps({"text": text}, ensure_ascii=False, separators=(",", ":"))
         result = await self._text_call(
             [AIMessage("system", AUTOCOMPLETE_SYSTEM), AIMessage("user", payload)],
-            max_tokens=80,
+            max_tokens=512,
         )
         return result.content.splitlines()[0][:500]
 
@@ -389,28 +406,32 @@ class AIService:
         payload = json.dumps({"source": text}, ensure_ascii=False, separators=(",", ":"))
         self._check_input(payload)
 
-        def validate(data: dict[str, Any]) -> TopicsAIOutput:
+        def validate(data: dict[str, Any]) -> list[TopicSuggestion]:
             output = TopicsAIOutput.model_validate(data)
             if len(output.topics) > self.settings.ai_max_topics:
                 raise ValueError("too many topics")
-            candidates = sorted(
-                output.topics, key=lambda item: (item.index, item.topic.casefold())
-            )
+
+            candidates: list[TopicSuggestion] = []
+            for topic in output.topics:
+                index = _find_anchor_index(text, topic.anchor)
+                if index is None:
+                    raise ValueError("topic anchor does not occur in source")
+                candidates.append(TopicSuggestion(topic=topic.topic, index=index))
+            candidates.sort(key=lambda item: (item.index, item.topic.casefold()))
+
             unique: dict[int, TopicSuggestion] = {}
             for topic in candidates:
-                if topic.index >= len(text):
-                    raise ValueError("topic index is outside source")
                 unique.setdefault(topic.index, topic)
-            return output.model_copy(update={"topics": list(unique.values())})
+            return list(unique.values())
 
-        output, _result, _attempts = await self._structured_call(
+        topics, _result, _attempts = await self._structured_call(
             [AIMessage("system", TOPICS_SYSTEM), AIMessage("user", payload)],
             schema_name="ally_topics",
             schema_model=TopicsAIOutput,
             validator=validate,
             max_tokens=min(2_000, self.settings.ai_max_output_tokens),
         )
-        return output.topics
+        return topics
 
     async def review_action(self, *, user_id: UUID, action_item_id: UUID, request: Any):
         result = await self.store.review_action(

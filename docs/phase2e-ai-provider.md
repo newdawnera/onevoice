@@ -27,7 +27,8 @@ Authenticated routes are:
 - `POST /ai/autocomplete`: short plain-text continuation with its own tighter
   distributed limiter;
 - `POST /ai/question`: separate bounded question and context fields;
-- `POST /ai/topics`: validated topics and zero-based source indexes;
+- `POST /ai/topics`: validated topics with zero-based source indexes resolved
+  locally from provider-returned verbatim source anchors;
 - `POST /action-items/{id}/review`: owner-scoped confirm or reject, with the
   complete reviewed action fields.
 
@@ -42,6 +43,10 @@ The selected production configuration is `openai/gpt-oss-20b` for both
 model and documents strict JSON-schema structured output for the GPT-OSS
 models. It is used through the official async `groq` Python SDK with no tools,
 browsing, code execution, function calls, Compound model, or custom base URL.
+GPT-OSS calls use low reasoning effort and omit reasoning from responses so
+short product tasks do not exhaust their completion budget before returning
+user-visible content. Autocomplete still receives a bounded 512-token ceiling
+and its displayed result is capped locally.
 Review current availability before rollout:
 
 - https://console.groq.com/docs/models
@@ -102,8 +107,11 @@ server-owned allow-list. Questions and contexts have independent limits.
 Provider structured results are parsed and then validated again with strict
 local Pydantic schemas that reject extra fields, malformed dates, reversed date
 ranges, invalid email addresses, multiline subjects, excessive actions/topics,
-bad topic indexes, and oversized evidence. A malformed structured response gets
-at most one bounded repair attempt and no partial data is saved.
+topic anchors absent from the submitted source, and oversized evidence. The
+server derives topic indexes from exact, case-insensitive, or
+whitespace-equivalent anchor matches rather than trusting model arithmetic. A
+malformed structured response gets at most one bounded repair attempt and no
+partial data is saved.
 
 The provider returns plain text or data, never trusted HTML. Ally constructs
 `formatted_result` locally from escaped summary text. A generated assignee

@@ -56,11 +56,12 @@ export function clearGenerationRetry() {
   sessionStorage.removeItem(GENERATION_STATE_KEY);
 }
 
-export function autocompleteText(text) {
+export function autocompleteText(text, signal) {
   return authenticatedJson("/ai/autocomplete", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text }),
+    signal,
   });
 }
 

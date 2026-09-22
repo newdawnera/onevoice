@@ -166,6 +166,8 @@ async def test_meeting_generation_separates_prompts_validates_email_and_escapes_
     assert "Alice will send" not in messages[0].content
     assert messages[1].role == "user"
     assert "Alice will send" in messages[1].content
+    assert '"requested_role":"Engineer"' in messages[1].content
+    assert '"target_language":"French"' in messages[1].content
     assert "test-only-secret" not in "".join(item.content for item in messages)
     assert store.persisted[0]["p_provider"] == "groq"
     assert store.persisted[0]["p_prompt_version"] == "phase2e-v1"
@@ -309,9 +311,9 @@ async def test_topic_indexes_are_sorted_and_deduplicated_deterministically():
         structured=[
             {
                 "topics": [
-                    {"topic": "Zulu", "index": 3},
-                    {"topic": "Alpha", "index": 3},
-                    {"topic": "Start", "index": 0},
+                    {"topic": "Zulu", "anchor": "def"},
+                    {"topic": "Alpha", "anchor": "DEF"},
+                    {"topic": "Start", "anchor": "abc"},
                 ]
             }
         ]
@@ -321,12 +323,26 @@ async def test_topic_indexes_are_sorted_and_deduplicated_deterministically():
 
 
 @pytest.mark.asyncio
-async def test_out_of_range_topics_are_rejected_after_one_repair():
-    invalid = {"topics": [{"topic": "Outside", "index": 99}]}
+async def test_unmatched_topic_anchors_are_rejected_after_one_repair():
+    invalid = {"topics": [{"topic": "Outside", "anchor": "not in source"}]}
     provider = FakeProvider(structured=[invalid, invalid])
     with pytest.raises(AIMalformedResponseError):
         await AIService(settings(), provider, FakeStore()).detect_topics("short")
     assert len(provider.structured_calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_topic_anchor_mapping_preserves_original_whitespace_index():
+    provider = FakeProvider(
+        structured=[
+            {"topics": [{"topic": "Second", "anchor": "SECOND topic starts"}]}
+        ]
+    )
+    source = "First topic.\n\nSecond   topic starts here."
+    topics = await AIService(settings(), provider, FakeStore()).detect_topics(source)
+    assert [(item.topic, item.index) for item in topics] == [
+        ("Second", source.index("Second"))
+    ]
 
 
 @pytest.mark.asyncio
@@ -353,3 +369,30 @@ async def test_question_budget_counts_question_and_serialized_context():
     with pytest.raises(AIInputTooLargeError):
         await service.answer_question(question="why", context="x" * 20)
     assert provider.text_calls == []
+
+
+@pytest.mark.asyncio
+async def test_autocomplete_has_reasoning_headroom_and_returns_one_safe_line():
+    provider = FakeProvider(text="continue naturally\nignore this second line")
+    result = await AIService(settings(), provider, FakeStore()).autocomplete(
+        "This sentence should"
+    )
+    assert result == "continue naturally"
+    assert provider.text_calls[0]["max_output_tokens"] == 512
+    messages = provider.text_calls[0]["messages"]
+    assert "This sentence should" not in messages[0].content
+    assert "This sentence should" in messages[1].content
+
+
+@pytest.mark.asyncio
+async def test_question_uses_separate_untrusted_payload_and_plain_text_result():
+    provider = FakeProvider(text="The answer is in the source.")
+    result = await AIService(settings(), provider, FakeStore()).answer_question(
+        question="What is the answer?", context="The source says forty-two."
+    )
+    assert result == "The answer is in the source."
+    messages = provider.text_calls[0]["messages"]
+    assert "forty-two" not in messages[0].content
+    assert "What is the answer?" not in messages[0].content
+    assert "forty-two" in messages[1].content
+    assert "What is the answer?" in messages[1].content

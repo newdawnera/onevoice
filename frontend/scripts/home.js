@@ -490,6 +490,7 @@ const App = (() => {
   }
 
   let autocompleteTimeout;
+  let autocompleteController;
 
   function handleAutocomplete(delta, oldDelta, source) {
     if (source !== "user" || !state.isAutocompleteEnabled) {
@@ -503,6 +504,7 @@ const App = (() => {
     }
 
     clearTimeout(autocompleteTimeout);
+    autocompleteController?.abort();
     autocompleteTimeout = setTimeout(async () => {
       const selection = inputQuill.getSelection();
 
@@ -522,7 +524,11 @@ const App = (() => {
 
       state.suggestionCursorIndex = cursorIndex;
 
-      const suggestion = await getSmartCompletion(lastLine);
+      autocompleteController = new AbortController();
+      const suggestion = await getSmartCompletion(
+        lastLine,
+        autocompleteController.signal
+      );
 
       const currentSelection = inputQuill.getSelection();
       if (!currentSelection || currentSelection.index !== cursorIndex) {
@@ -719,10 +725,10 @@ const App = (() => {
     }
   }
 
-  async function getSmartCompletion(text) {
+  async function getSmartCompletion(text, signal) {
     if (text.trim().length < 10) return null;
     try {
-      const result = await autocompleteText(text);
+      const result = await autocompleteText(text, signal);
       return result.text.trim().split("\n")[0];
     } catch (error) {
       return null;
@@ -730,14 +736,10 @@ const App = (() => {
   }
 
   async function detectTopics(text) {
-    try {
-      const parsedJson = await detectDocumentTopics(text);
-      return parsedJson.topics
-        .filter((t) => typeof t.index === "number" && t.index >= 0)
-        .sort((a, b) => a.index - b.index);
-    } catch (error) {
-      return null;
-    }
+    const parsedJson = await detectDocumentTopics(text);
+    return parsedJson.topics
+      .filter((t) => typeof t.index === "number" && t.index >= 0)
+      .sort((a, b) => a.index - b.index);
   }
 
   async function answerQuestion(question, context) {
@@ -1021,7 +1023,11 @@ const App = (() => {
 
     el.autocompleteToggle.addEventListener("change", (e) => {
       state.isAutocompleteEnabled = e.target.checked;
-      if (!state.isAutocompleteEnabled) hideSuggestions();
+      if (!state.isAutocompleteEnabled) {
+        clearTimeout(autocompleteTimeout);
+        autocompleteController?.abort();
+        hideSuggestions();
+      }
     });
     el.detectTopicsBtn.addEventListener("click", handleDetectTopics);
     el.qaAskBtn.addEventListener("click", () => handleAskQuestion("summary"));
@@ -1551,6 +1557,11 @@ const App = (() => {
       } else {
         showAlert("No distinct topics were detected.", "info");
       }
+    } catch (error) {
+      showAlert(
+        error?.message || "Topic detection is temporarily unavailable.",
+        "danger"
+      );
     } finally {
       el.detectTopicsBtn.disabled = false;
       el.detectTopicsBtn.textContent = "Detect & Label Topics";

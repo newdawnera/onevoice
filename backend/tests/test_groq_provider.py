@@ -86,6 +86,8 @@ async def test_successful_text_request_has_no_tools_or_browser_controls():
     assert "functions" not in call
     assert "compound_custom" not in call
     assert call["model"] == "openai/gpt-oss-20b"
+    assert call["reasoning_effort"] == "low"
+    assert call["include_reasoning"] is False
 
 
 @pytest.mark.asyncio
@@ -99,7 +101,10 @@ async def test_successful_strict_structured_request():
         max_output_tokens=100,
     )
     assert result.data == {"value": "ok"}
-    assert client.completions.calls[0]["response_format"]["json_schema"]["strict"] is True
+    call = client.completions.calls[0]
+    assert call["response_format"]["json_schema"]["strict"] is True
+    assert call["reasoning_effort"] == "low"
+    assert call["include_reasoning"] is False
 
 
 @pytest.mark.asyncio
