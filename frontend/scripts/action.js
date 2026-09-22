@@ -10,6 +10,7 @@ import {
   updateActionItem,
 } from "./dataService.js";
 import { requestManualReminder } from "./reminderClient.js";
+import { reviewActionItem } from "./aiClient.js";
 
 const STATUS_OPTIONS = Object.freeze([
   ["not_started", "Not Started"],
@@ -100,6 +101,22 @@ async function actionPage() {
       sourceLabel(task.source)
     );
     titleCell.appendChild(source);
+    if (task.source === "ai_generated") {
+      const review = createElement(
+        "span",
+        task.reviewStatus === "confirmed"
+          ? "ml-2 inline-block rounded bg-green-100 px-2 py-0.5 text-xs text-green-800"
+          : task.reviewStatus === "rejected"
+            ? "ml-2 inline-block rounded bg-red-100 px-2 py-0.5 text-xs text-red-800"
+            : "ml-2 inline-block rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-900",
+        task.reviewStatus === "confirmed"
+          ? "Confirmed"
+          : task.reviewStatus === "rejected"
+            ? "Rejected"
+            : "Needs review"
+      );
+      titleCell.appendChild(review);
+    }
 
     const assigneeCell = createElement(
       "td",
@@ -167,12 +184,41 @@ async function actionPage() {
     );
     remind.type = "button";
     remind.dataset.id = task.id;
-    remind.disabled = !task.assigneeEmail || task.status === "completed";
+    const reviewEligible =
+      task.source !== "ai_generated" || task.reviewStatus === "confirmed";
+    remind.disabled =
+      !task.assigneeEmail || task.status === "completed" || !reviewEligible;
     remind.title = !task.assigneeEmail
       ? "Add an assignee email before sending a reminder"
+      : !reviewEligible
+        ? "Review and confirm this AI-proposed action before sending reminders"
       : task.status === "completed"
         ? "Completed actions do not need reminders"
         : "Send a reminder to the stored assignee email";
+    if (task.source === "ai_generated") {
+      if (task.reviewStatus !== "confirmed") {
+        const confirm = createElement(
+          "button",
+          "confirm-btn text-green-700 hover:text-green-900",
+          "Confirm"
+        );
+        confirm.type = "button";
+        confirm.dataset.id = task.id;
+        confirm.title = "Confirm the visible task, recipient, and dates";
+        actions.appendChild(confirm);
+      }
+      if (task.reviewStatus !== "rejected") {
+        const reject = createElement(
+          "button",
+          "reject-btn text-red-700 hover:text-red-900",
+          "Reject"
+        );
+        reject.type = "button";
+        reject.dataset.id = task.id;
+        reject.title = "Reject this AI proposal and disable reminders";
+        actions.appendChild(reject);
+      }
+    }
     actions.append(remind, edit, remove);
     actionsCell.appendChild(actions);
 
@@ -366,6 +412,40 @@ async function actionPage() {
     const button = event.target.closest("button");
     const id = button?.dataset.id;
     if (!button || !id) return;
+    if (
+      button.classList.contains("confirm-btn") ||
+      button.classList.contains("reject-btn")
+    ) {
+      const task = tasks.get(id);
+      if (!task) return;
+      const decision = button.classList.contains("confirm-btn")
+        ? "confirmed"
+        : "rejected";
+      button.disabled = true;
+      try {
+        const reviewed = await reviewActionItem(id, task, decision);
+        tasks.set(id, {
+          ...task,
+          title: reviewed.title,
+          assignee: reviewed.assignee,
+          assigneeEmail: reviewed.assignee_email,
+          startDate: reviewed.start_date,
+          deadline: reviewed.deadline,
+          reviewStatus: reviewed.review_status,
+          reviewedAt: reviewed.reviewed_at,
+        });
+        reminderStatus.textContent =
+          decision === "confirmed"
+            ? "Action confirmed. Reminder eligibility now uses the visible recipient and dates."
+            : "Action rejected. Reminders are disabled for it.";
+        renderTable();
+      } catch {
+        button.disabled = false;
+        reminderStatus.textContent =
+          "The review was not saved. The action remains in its previous review state.";
+      }
+      return;
+    }
     if (button.classList.contains("reminder-btn")) {
       if (button.disabled) return;
       button.disabled = true;
@@ -393,7 +473,10 @@ async function actionPage() {
         }
       } finally {
         const task = tasks.get(id);
-        button.disabled = !task?.assigneeEmail || task?.status === "completed";
+        button.disabled =
+          !task?.assigneeEmail ||
+          task?.status === "completed" ||
+          (task?.source === "ai_generated" && task?.reviewStatus !== "confirmed");
       }
       return;
     }

@@ -510,6 +510,58 @@ test("manual reminders send only the action path and retain one retry key", asyn
   assert.equal(JSON.stringify(calls).includes("userId"), false);
 });
 
+test("meeting generation reuses uncertain keys and creates a new key after success", async () => {
+  const calls = [];
+  const generated = [
+    "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  ];
+  let shouldFail = true;
+  const sessionStorage = new MemoryStorage();
+  const context = createContext({
+    crypto: { randomUUID: () => generated.shift() },
+    sessionStorage,
+  });
+  const namespace = await loadScript("aiClient.js", context, {
+    "./apiClient.js": {
+      async authenticatedJson(path, options) {
+        calls.push({ path, options });
+        if (shouldFail) {
+          shouldFail = false;
+          throw Object.assign(new Error("uncertain"), { status: 503 });
+        }
+        return { meeting_id: "meeting" };
+      },
+    },
+  });
+  const payload = {
+    source_text: "Meeting source",
+    source_type: "text",
+    role: null,
+    target_language: null,
+  };
+
+  await assert.rejects(namespace.generateMeeting(payload));
+  await namespace.generateMeeting(payload);
+  await namespace.generateMeeting(payload);
+
+  assert.deepEqual(calls.map((call) => call.path), [
+    "/generate-result/",
+    "/generate-result/",
+    "/generate-result/",
+  ]);
+  assert.equal(
+    calls[0].options.headers["Idempotency-Key"],
+    calls[1].options.headers["Idempotency-Key"]
+  );
+  assert.notEqual(
+    calls[1].options.headers["Idempotency-Key"],
+    calls[2].options.headers["Idempotency-Key"]
+  );
+  assert.equal(JSON.stringify(calls).includes("ai_provider"), false);
+  assert.equal(JSON.stringify(calls).includes("model"), false);
+});
+
 class FakeElement {
   constructor() {
     this.children = [];
@@ -734,43 +786,19 @@ async function loadDataService({ userId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
   return { calls, namespace, responses, userId };
 }
 
-test("meeting save normalizes extracted actions and never sends a caller owner", async () => {
-  const { calls, namespace } = await loadDataService();
-  const requestId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
-  const result = await namespace.saveMeetingWithActions({
-    actions: [
-      {
-        task: "  Ship release  ",
-        assignee: " Alice ",
-        assigneeEmail: "alice@example.com",
-        startDate: "2026-09-20",
-        deadline: "2026-09-21",
-        ignored: "not persisted",
-      },
-    ],
-    clientRequestId: requestId,
-    sourceType: "text",
-    sourceText: " Meeting source ",
-    summaryText: " Summary ",
-  });
+test("browser data service cannot persist AI provenance or generated actions", async () => {
+  const dataService = fs.readFileSync(path.join(scriptsDirectory, "dataService.js"), "utf8");
+  assert.doesNotMatch(dataService, /save_meeting_with_actions/);
+  assert.doesNotMatch(dataService, /p_ai_provider|p_ai_model|p_actions/);
 
-  assert.equal(result, "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
-  assert.equal(calls.rpc.length, 1);
-  assert.equal(calls.rpc[0].name, "save_meeting_with_actions");
-  assert.equal("user_id" in calls.rpc[0].value, false);
-  assert.equal("p_user_id" in calls.rpc[0].value, false);
-  assert.deepEqual(
-    JSON.parse(JSON.stringify(calls.rpc[0].value.p_actions)),
-    [
-      {
-        title: "Ship release",
-        assignee: "Alice",
-        assigneeEmail: "alice@example.com",
-        startDate: "2026-09-20",
-        deadline: "2026-09-21",
-      },
-    ]
-  );
+  const { namespace } = await loadDataService();
+  const mapped = namespace.mapActionRow({
+    id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    source: "ai_generated",
+    review_status: "pending",
+    title: "Review the release",
+  });
+  assert.equal(mapped.reviewStatus, "pending");
 });
 
 test("action create sets only the verified owner and editable manual fields", async () => {
@@ -911,9 +939,10 @@ test("migrated page scripts have no Firebase runtime or unsafe stored-content in
   const history = fs.readFileSync(path.join(scriptsDirectory, "history.js"), "utf8");
   const action = fs.readFileSync(path.join(scriptsDirectory, "action.js"), "utf8");
   const reminderClient = fs.readFileSync(path.join(scriptsDirectory, "reminderClient.js"), "utf8");
+  const aiClient = fs.readFileSync(path.join(scriptsDirectory, "aiClient.js"), "utf8");
   const home = fs.readFileSync(path.join(scriptsDirectory, "home.js"), "utf8");
 
-  for (const source of [dataService, history, action, home, reminderClient]) {
+  for (const source of [dataService, history, action, home, reminderClient, aiClient]) {
     assert.doesNotMatch(source, /firebase|firestore|currentUser\.uid|user\.uid/i);
   }
   assert.doesNotMatch(history, /innerHTML/);
@@ -921,7 +950,13 @@ test("migrated page scripts have no Firebase runtime or unsafe stored-content in
   assert.doesNotMatch(action, /send-manual-reminder/);
   assert.match(action, /requestManualReminder/);
   assert.match(reminderClient, /Idempotency-Key/);
-  assert.match(home, /crypto\.randomUUID\(\)/);
-  assert.match(home, /saveMeetingWithActions/);
+  assert.match(aiClient, /crypto\.randomUUID\(\)/);
+  assert.match(aiClient, /Idempotency-Key/);
+  assert.doesNotMatch(home, /saveMeetingWithActions|ai_provider|ai_model|is_json/);
+  assert.match(home, /Needs review/);
+  assert.match(action, /reviewStatus === "confirmed"/);
+  assert.match(home, /await reviewActionItem[\s\S]*state\.proposedActions\[index\] = reviewed/);
+  assert.match(home, /catch[\s\S]*action remains unconfirmed/);
+  assert.doesNotMatch(home, /Promise\.all[\s\S]*reviewActionItem|confirmAll|bulkConfirm/i);
   assert.match(history, /Search covers the records currently loaded/);
 });

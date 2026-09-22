@@ -138,6 +138,14 @@ AI_RATE_LIMIT = enforce_rate_limits(
     RateLimitSpec("ai_minute", "rate_limit_ai_per_minute", 60),
     RateLimitSpec("ai_day", "rate_limit_ai_per_day", 86_400),
 )
+AUTOCOMPLETE_RATE_LIMIT = enforce_rate_limits(
+    RateLimitSpec(
+        "ai_autocomplete_minute", "rate_limit_autocomplete_per_minute", 60
+    ),
+    RateLimitSpec(
+        "ai_autocomplete_day", "rate_limit_autocomplete_per_day", 86_400
+    ),
+)
 TRANSCRIPTION_RATE_LIMIT = enforce_rate_limits(
     RateLimitSpec(
         "transcription_minute", "rate_limit_transcription_per_minute", 60

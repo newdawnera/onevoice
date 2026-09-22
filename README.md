@@ -10,14 +10,19 @@ moves meeting history and action items to owner-scoped Supabase rows, adds an
 atomic idempotent meeting-save RPC and secure Realtime subscriptions, and
 removes Firebase runtime dependencies. Phase 2D adds QStash-signed reminder
 execution, durable idempotent Brevo delivery, and expiring single-use status
-links. See
+links. Phase 2E removes Gemini, adds a backend-only async Groq abstraction with
+strict validated outputs and durable generation idempotency, and requires
+explicit owner review before an AI-proposed action can enter any reminder path.
+See
 [docs/supabase-setup.md](docs/supabase-setup.md) for database setup and
 [docs/phase2b-auth.md](docs/phase2b-auth.md) for the Auth architecture,
 deployment checklist, dashboard status, tests, and residual risks. The Phase 2C
 data/grants/RLS design is in
 [docs/phase2c-data-migration.md](docs/phase2c-data-migration.md), and the Phase
 2D trust boundaries, state machine, schedule runbook, and deployment order are
-in [docs/phase2d-reminders.md](docs/phase2d-reminders.md).
+in [docs/phase2d-reminders.md](docs/phase2d-reminders.md). The Phase 2E provider,
+prompt, idempotency, review, migration, rollout, and rollback design is in
+[docs/phase2e-ai-provider.md](docs/phase2e-ai-provider.md).
 
 No Firebase export was found, so historical Firestore records were not imported.
 New history, action, and reminder operations use Supabase. The old unsigned

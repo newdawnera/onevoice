@@ -1,9 +1,13 @@
 import { initializeApp } from "./appLogic.js";
 import { authenticatedJson } from "./apiClient.js";
 import {
-  normalizeExtractedActions,
-  saveMeetingWithActions,
-} from "./dataService.js";
+  askDocumentQuestion,
+  autocompleteText,
+  clearGenerationRetry,
+  detectDocumentTopics,
+  generateMeeting,
+  reviewActionItem,
+} from "./aiClient.js";
 import DOMPurify from "https://cdn.jsdelivr.net/npm/dompurify@3.4.15/+esm";
 
 const App = (() => {
@@ -32,7 +36,7 @@ const App = (() => {
     emailSubject: "",
     fileName: "",
     sourceType: "text",
-    pendingMeetingSave: null,
+    proposedActions: [],
     isDictating: false,
     isRecordingMedia: false,
     isAutocompleteEnabled: false,
@@ -111,6 +115,7 @@ const App = (() => {
     "close-qa-btn",
     "close-transcript-qa-btn",
     "manage-action-logs-btn",
+    "proposed-actions",
     "fullscreen-recording-overlay",
     "overlay-mic-icon",
     "year",
@@ -167,25 +172,10 @@ const App = (() => {
         signal,
       });
     },
-    generateResult(data) {
-      return this.handleReq("/generate-result/", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-    },
     sendEmail(formData) {
       return this.handleReq("/send-email/", {
         method: "POST",
         body: formData,
-      });
-    },
-
-    aiHelper(task_type, context, is_json = false) {
-      return this.handleReq("/ai-helper", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ task_type, context, is_json }),
       });
     },
   };
@@ -224,38 +214,6 @@ const App = (() => {
     alertEl.appendChild(panel);
     el.alertContainer.appendChild(alertEl);
     setTimeout(() => document.getElementById(tempId)?.remove(), 5000);
-  }
-
-  function showMeetingSaveRetry() {
-    const wrapper = document.createElement("div");
-    wrapper.id = "meeting-save-retry";
-    const panel = document.createElement("div");
-    panel.className = "bg-red-100 border-red-500 text-red-700 border-l-4 p-4";
-    panel.setAttribute("role", "alert");
-    const heading = document.createElement("p");
-    heading.className = "font-bold";
-    heading.textContent = "Saving failed";
-    const body = document.createElement("p");
-    body.textContent =
-      "Your generated result is still available. Retry the same save without regenerating it.";
-    const retry = document.createElement("button");
-    retry.type = "button";
-    retry.className =
-      "mt-3 rounded-md bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-800";
-    retry.textContent = "Retry saving";
-    retry.addEventListener("click", async () => {
-      retry.disabled = true;
-      retry.textContent = "Saving…";
-      const saved = await persistPendingMeeting();
-      if (!saved) {
-        retry.disabled = false;
-        retry.textContent = "Retry saving";
-      }
-    });
-    panel.append(heading, body, retry);
-    wrapper.appendChild(panel);
-    document.getElementById(wrapper.id)?.remove();
-    el.alertContainer.appendChild(wrapper);
   }
 
   function sourceTypeForFile(file) {
@@ -489,7 +447,7 @@ const App = (() => {
     if (!file) return;
     state.fileName = file.name;
     state.sourceType = sourceTypeForFile(file);
-    state.pendingMeetingSave = null;
+    state.proposedActions = [];
     el.fileName.textContent = "File: " + file.name;
     state.sourceText = "";
     state.isStructured = false;
@@ -604,50 +562,119 @@ const App = (() => {
     }
   }
 
-  async function extractActionsForSave() {
-    if (!state.plainTextResult?.trim()) return { actions: [], failed: false };
-    try {
-      const response = await api.aiHelper(
-        "extract_actions",
-        { summary: state.plainTextResult },
-        true
-      );
-      return { actions: normalizeExtractedActions(response), failed: false };
-    } catch {
-      return { actions: [], failed: true };
-    }
+  function proposalField(labelText, value, type = "text") {
+    const wrapper = document.createElement("label");
+    wrapper.className = "block text-xs font-medium text-slate-700";
+    const label = document.createElement("span");
+    label.textContent = labelText;
+    const input = document.createElement("input");
+    input.type = type;
+    input.value = value || "";
+    input.className = "mt-1 w-full rounded border border-slate-300 p-2 text-sm";
+    wrapper.append(label, input);
+    return { input, wrapper };
   }
 
-  async function persistPendingMeeting() {
-    const pending = state.pendingMeetingSave;
-    if (!pending || pending.saving) return false;
-    pending.saving = true;
-    try {
-      await saveMeetingWithActions(pending.payload);
-      document.getElementById("meeting-save-retry")?.remove();
-      state.pendingMeetingSave = null;
-      if (pending.extractionFailed) {
-        showAlert(
-          "Meeting saved without action items because automatic extraction was unavailable.",
-          "info"
-        );
-      } else if (pending.payload.actions.length) {
-        showAlert(
-          `Meeting and ${pending.payload.actions.length} action item${
-            pending.payload.actions.length === 1 ? "" : "s"
-          } saved securely.`,
-          "success"
-        );
-      } else {
-        showAlert("Meeting saved to your history.", "success");
-      }
-      return true;
-    } catch {
-      showMeetingSaveRetry();
-      return false;
-    } finally {
-      pending.saving = false;
+  function renderProposedActions() {
+    if (!el.proposedActions) return;
+    el.proposedActions.replaceChildren();
+    if (!state.proposedActions.length) {
+      el.proposedActions.classList.add("hidden");
+      return;
     }
+    el.proposedActions.classList.remove("hidden");
+    const heading = document.createElement("h3");
+    heading.className = "text-lg font-bold text-slate-900";
+    heading.textContent = "Proposed action items";
+    const explanation = document.createElement("p");
+    explanation.className = "mt-1 text-sm text-slate-600";
+    explanation.textContent =
+      "AI suggestions need your review. Confirming an item makes it eligible for reminders; check the recipient and dates carefully.";
+    el.proposedActions.append(heading, explanation);
+
+    state.proposedActions.forEach((action, index) => {
+      const card = document.createElement("section");
+      card.className = "mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4";
+      const badge = document.createElement("span");
+      badge.className = "inline-block rounded px-2 py-1 text-xs font-bold";
+      badge.textContent =
+        action.review_status === "confirmed"
+          ? "Confirmed"
+          : action.review_status === "rejected"
+            ? "Rejected"
+            : "Needs review";
+      badge.classList.add(
+        action.review_status === "confirmed"
+          ? "bg-green-100"
+          : action.review_status === "rejected"
+            ? "bg-red-100"
+            : "bg-amber-200"
+      );
+      const title = proposalField("Task", action.title);
+      const assignee = proposalField("Assignee", action.assignee);
+      const email = proposalField("Recipient email", action.assignee_email, "email");
+      const start = proposalField("Start date", action.start_date, "date");
+      const deadline = proposalField("Deadline", action.deadline, "date");
+      const grid = document.createElement("div");
+      grid.className = "mt-3 grid gap-3 sm:grid-cols-2";
+      grid.append(
+        title.wrapper,
+        assignee.wrapper,
+        email.wrapper,
+        start.wrapper,
+        deadline.wrapper
+      );
+      if (action.evidence) {
+        const evidence = document.createElement("p");
+        evidence.className = "mt-3 text-xs text-slate-600";
+        evidence.textContent = `Source evidence: ${action.evidence}`;
+        grid.appendChild(evidence);
+      }
+      const controls = document.createElement("div");
+      controls.className = "mt-3 flex gap-2";
+      const confirm = document.createElement("button");
+      confirm.type = "button";
+      confirm.className = "rounded bg-green-700 px-3 py-2 text-sm font-bold text-white";
+      confirm.textContent = "Confirm";
+      const reject = document.createElement("button");
+      reject.type = "button";
+      reject.className = "rounded bg-red-700 px-3 py-2 text-sm font-bold text-white";
+      reject.textContent = "Reject";
+      const submitReview = async (decision) => {
+        confirm.disabled = true;
+        reject.disabled = true;
+        try {
+          const reviewed = await reviewActionItem(
+            action.id,
+            {
+              title: title.input.value,
+              assignee: assignee.input.value,
+              assigneeEmail: email.input.value,
+              startDate: start.input.value || null,
+              deadline: deadline.input.value || null,
+            },
+            decision
+          );
+          state.proposedActions[index] = reviewed;
+          renderProposedActions();
+          showAlert(
+            decision === "confirmed"
+              ? "Action confirmed and now eligible for reminders."
+              : "Action rejected; reminders remain disabled.",
+            "success"
+          );
+        } catch {
+          showAlert("The review was not saved. The action remains unconfirmed.", "danger");
+          confirm.disabled = false;
+          reject.disabled = false;
+        }
+      };
+      confirm.addEventListener("click", () => submitReview("confirmed"));
+      reject.addEventListener("click", () => submitReview("rejected"));
+      controls.append(confirm, reject);
+      card.append(badge, grid, controls);
+      el.proposedActions.appendChild(card);
+    });
   }
 
   async function handleGetResult() {
@@ -666,8 +693,10 @@ const App = (() => {
     const sourceTextForAI = tempDiv.innerText;
 
     try {
-      const data = await api.generateResult({
-        text: sourceTextForAI,
+      const data = await generateMeeting({
+        source_text: sourceTextForAI,
+        source_type: state.sourceType,
+        source_filename: state.fileName || null,
         role: role,
         target_language: language,
       });
@@ -675,30 +704,15 @@ const App = (() => {
       state.result = sanitizeRichHtml(data.formatted_result);
       state.plainTextResult = data.plain_text_summary;
       state.emailSubject = data.email_subject;
-      showAlert("Result generated!", "success");
+      state.proposedActions = Array.isArray(data.actions) ? data.actions : [];
+      renderProposedActions();
+      showAlert(
+        state.proposedActions.length
+          ? "Result saved. Review each proposed action before reminders can be used."
+          : "Result generated and saved to your history.",
+        "success"
+      );
       goToPage(3);
-
-      const extracted = await extractActionsForSave();
-      state.pendingMeetingSave = {
-        extractionFailed: extracted.failed,
-        saving: false,
-        payload: {
-          clientRequestId: crypto.randomUUID(),
-          sourceType: state.sourceType,
-          sourceFilename: state.fileName || null,
-          sourceHtml: sanitizeRichHtml(state.sourceText),
-          sourceText: sourceTextForAI,
-          summaryHtml: sanitizeRichHtml(state.result),
-          summaryText: state.plainTextResult,
-          emailSubject: state.emailSubject || null,
-          requestedRole: role || null,
-          targetLanguage: language || null,
-          aiProvider: data.ai_provider || null,
-          aiModel: data.ai_model || null,
-          actions: extracted.actions,
-        },
-      };
-      await persistPendingMeeting();
     } catch {
     } finally {
       toggleGeneratingControls(false);
@@ -708,7 +722,7 @@ const App = (() => {
   async function getSmartCompletion(text) {
     if (text.trim().length < 10) return null;
     try {
-      const result = await api.aiHelper("autocomplete", { text });
+      const result = await autocompleteText(text);
       return result.text.trim().split("\n")[0];
     } catch (error) {
       return null;
@@ -717,8 +731,8 @@ const App = (() => {
 
   async function detectTopics(text) {
     try {
-      const parsedJson = await api.aiHelper("detect_topics", { text }, true);
-      return parsedJson
+      const parsedJson = await detectDocumentTopics(text);
+      return parsedJson.topics
         .filter((t) => typeof t.index === "number" && t.index >= 0)
         .sort((a, b) => a.index - b.index);
     } catch (error) {
@@ -728,7 +742,7 @@ const App = (() => {
 
   async function answerQuestion(question, context) {
     try {
-      const result = await api.aiHelper("q_and_a", { question, context });
+      const result = await askDocumentQuestion(question, context);
       return result.text.trim();
     } catch (error) {
       return "Sorry, I could not process the answer at this moment.";
@@ -781,7 +795,6 @@ const App = (() => {
       German: "German",
       Japanese: "Japanese",
       Swahili: "Swahili",
-      Other: "Other...",
     };
 
     const populateSelect = (selectElement, options) => {
@@ -934,7 +947,7 @@ const App = (() => {
           el.fileUpload.value = "";
         }
         state.sourceType = "text";
-        state.pendingMeetingSave = null;
+        state.proposedActions = [];
         state.isStructured = false;
         updateUI();
         saveStateToLocalStorage();
@@ -971,9 +984,11 @@ const App = (() => {
         emailSubject: "",
         fileName: "",
         sourceType: "text",
-        pendingMeetingSave: null,
+        proposedActions: [],
         isStructured: false,
       });
+      clearGenerationRetry();
+      renderProposedActions();
       if (inputQuill) inputQuill.setContents([], "api");
       if (quill) quill.setContents([], "api");
       el.fileUpload.value = "";
@@ -1251,7 +1266,7 @@ const App = (() => {
           state.sourceText = sanitizeRichHtml(inputQuill.root.innerHTML);
           state.sourceType = "system_audio";
           state.fileName = "";
-          state.pendingMeetingSave = null;
+          state.proposedActions = [];
           updateUI();
           if (newText) showAlert("Media transcribed successfully!", "success");
         } catch (error) {
@@ -1392,7 +1407,7 @@ const App = (() => {
           state.sourceText = sanitizeRichHtml(inputQuill.root.innerHTML);
           state.sourceType = "microphone";
           state.fileName = "";
-          state.pendingMeetingSave = null;
+          state.proposedActions = [];
           updateUI();
           showAlert("Dictation transcribed successfully!", "success");
         } catch (error) {

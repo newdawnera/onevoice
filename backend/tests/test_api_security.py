@@ -5,10 +5,10 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from auth import AuthenticatedUser, get_current_user
+from ai.schemas import MeetingGenerationRequest
 from config import get_settings
 from conftest import configured_settings
 from main import app
-from pyModels import ResultRequest
 from rate_limit import REMINDER_RATE_LIMIT
 
 
@@ -86,7 +86,9 @@ def test_legacy_status_route_is_disabled_and_firebase_config_is_removed():
 
 def test_caller_supplied_user_id_is_rejected_by_models():
     with pytest.raises(ValidationError):
-        ResultRequest.model_validate({"text": "hello", "userId": "someone-else"})
+        MeetingGenerationRequest.model_validate(
+            {"source_text": "hello", "userId": "someone-else"}
+        )
 
 
 def test_manual_reminder_rejects_browser_owned_task_data():

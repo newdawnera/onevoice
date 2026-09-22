@@ -23,7 +23,6 @@ import config
 import utils
 from auth import AuthenticatedUser, get_current_user
 from config import Settings, get_settings
-from pyModels import AiHelperRequest, ResultRequest
 from qstash_auth import (
     QStashRequestVerifier,
     QStashVerificationRejected,
@@ -31,7 +30,6 @@ from qstash_auth import (
     get_qstash_verifier,
 )
 from rate_limit import (
-    AI_RATE_LIMIT,
     DOCUMENT_RATE_LIMIT,
     EMAIL_RATE_LIMIT,
     REMINDER_RATE_LIMIT,
@@ -195,132 +193,6 @@ async def upload_document_endpoint(
         logger.warning("Document processing failed.")
         raise HTTPException(status_code=500, detail="Document processing failed.") from exc
     return {"text": text_content}
-
-
-@router.post("/generate-result/", summary="Generate Combined Result")
-async def generate_result_endpoint(
-    request: ResultRequest,
-    current_user: Authenticated,
-    settings: AppSettings,
-    _rate_limit: Annotated[None, Depends(AI_RATE_LIMIT)],
-):
-    del current_user, _rate_limit
-    if len(request.text) > settings.max_ai_text_chars:
-        raise HTTPException(status_code=413, detail="The submitted text is too large.")
-
-    summary_prompt = f"""
-    Create a neutral, accurate, structured summary of the source text below.
-    For meeting transcripts, include applicable meeting details, attendees,
-    agenda, discussion, decisions, action items, next steps, and next meeting.
-    For other documents, use logical headings appropriate to the material.
-    Use only information in the source, do not fabricate details, and return
-    plain text without Markdown.
-
-    Source text:
-    ---
-    {request.text}
-    ---
-    """
-    subject_prompt = (
-        "Generate a concise email subject of at most 10 words for the following "
-        f"text. Return only the subject.\n\n{request.text}"
-    )
-    try:
-        general_summary = await utils.generate_gemini_content(summary_prompt)
-        refined_summary = await utils.role_summary(general_summary, request.role)
-        summary = await utils.correct_summary_language(
-            request.text, refined_summary
-        )
-        email_subject = (
-            (await utils.generate_gemini_content(subject_prompt))
-            .strip()
-            .replace('"', "")
-        )
-        if request.target_language and request.target_language != "No Translation":
-            translation_prompt = (
-                f"Translate the following text into {request.target_language}. "
-                f"Return only the translation.\n\n{summary}"
-            )
-            summary = await utils.generate_gemini_content(translation_prompt)
-    except HTTPException:
-        raise HTTPException(status_code=502, detail="AI processing failed.")
-    except Exception as exc:
-        logger.warning("AI generation failed.")
-        raise HTTPException(status_code=502, detail="AI processing failed.") from exc
-
-    formatted_lines = []
-    for raw_line in summary.splitlines():
-        line = html.escape(raw_line.strip())
-        if not line:
-            continue
-        if (line.endswith(":") and len(line) < 100) or (
-            line.isupper() and len(line) > 1
-        ):
-            formatted_lines.append(f"<h3>{line}</h3>")
-        else:
-            formatted_lines.append(f"<p>{line}</p>")
-    return {
-        "formatted_result": "".join(formatted_lines),
-        "email_subject": email_subject[: settings.max_email_subject_chars],
-        "plain_text_summary": summary,
-        "ai_provider": utils.AI_PROVIDER,
-        "ai_model": utils.AI_MODEL,
-    }
-
-
-@router.post("/ai-helper", summary="Generic AI Helper")
-async def ai_helper_endpoint(
-    request: AiHelperRequest,
-    current_user: Authenticated,
-    settings: AppSettings,
-    _rate_limit: Annotated[None, Depends(AI_RATE_LIMIT)],
-):
-    del current_user, _rate_limit
-    serialized_context = json.dumps(request.context, ensure_ascii=False)
-    if len(serialized_context) > settings.max_ai_text_chars:
-        raise HTTPException(status_code=413, detail="The submitted text is too large.")
-
-    if request.task_type == "autocomplete":
-        prompt = (
-            "Continue this text naturally with only a short continuation: "
-            f"{request.context.get('text', '')}"
-        )
-    elif request.task_type == "q_and_a":
-        prompt = (
-            "Answer the question using only the supplied document. If the answer "
-            "is absent, say so.\n\nDocument:\n"
-            f"{request.context.get('context', '')}\n\nQuestion:\n"
-            f"{request.context.get('question', '')}"
-        )
-    elif request.task_type == "detect_topics":
-        prompt = (
-            "Return a JSON array of logical document sections. Each object must "
-            "contain a topic string and the character index where it begins.\n\n"
-            f"{request.context.get('text', '')}"
-        )
-    else:
-        prompt = (
-            "Extract action items from this summary as a JSON array. Each item must "
-            "contain task, assignee, assigneeEmail, startDate, and deadline. Dates "
-            "must use yyyy-mm-dd; missing values must be null; do not fabricate.\n\n"
-            f"{request.context.get('summary', '')}"
-        )
-
-    try:
-        response_text = await utils.generate_gemini_content(
-            prompt, is_json=request.is_json
-        )
-    except Exception as exc:
-        logger.warning("AI helper failed.")
-        raise HTTPException(status_code=502, detail="AI processing failed.") from exc
-
-    if not request.is_json:
-        return {"text": response_text}
-    cleaned = response_text.strip().replace("```json", "").replace("```", "")
-    try:
-        return json.loads(cleaned)
-    except json.JSONDecodeError as exc:
-        raise HTTPException(status_code=502, detail="AI processing failed.") from exc
 
 
 def _parse_recipients(raw: str, settings: Settings) -> list[dict[str, str]]:

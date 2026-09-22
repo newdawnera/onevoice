@@ -45,6 +45,12 @@ authenticated Supabase browser client and remain subject to RLS.
 
 ## Atomic meeting save and idempotency
 
+> Phase 2E update: this describes the original Phase 2C browser flow for
+> historical context. Browser execution of `save_meeting_with_actions` is now
+> revoked. New AI generations use the backend-only durable ledger and
+> `persist_ai_generation`, and every generated action starts pending review.
+> See `docs/phase2e-ai-provider.md`.
+
 `public.save_meeting_with_actions(...)` atomically creates one meeting, zero or
 more `ai_generated` actions, and the meeting's immutable action snapshot. It
 does not accept an owner parameter; both meeting and action owners are derived

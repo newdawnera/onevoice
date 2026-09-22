@@ -1,0 +1,355 @@
+import asyncio
+from dataclasses import replace
+from types import SimpleNamespace
+from uuid import UUID
+
+import pytest
+
+from ai.contracts import ProviderStructuredResult, ProviderTextResult, TokenUsage
+from ai.exceptions import (
+    AIGenerationInProgress,
+    AIIdempotencyConflict,
+    AIInputTooLargeError,
+    AIMalformedResponseError,
+)
+from ai.schemas import MeetingGenerationRequest
+from ai.service import AIService
+from conftest import configured_settings
+
+
+USER_ID = UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+KEY = UUID("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
+
+
+VALID_OUTPUT = {
+    "summary": "SUMMARY:\n<script>alert(1)</script>",
+    "email_subject": "Project update",
+    "actions": [
+        {
+            "title": "Send plan",
+            "assignee": "Alice",
+            "assignee_email": "invented@example.com",
+            "start_date": "2026-09-21",
+            "deadline": "2026-09-22",
+            "evidence": "Alice will send the plan",
+        }
+    ],
+}
+
+
+class FakeProvider:
+    name = "groq"
+    text_model = "openai/gpt-oss-20b"
+    structured_model = "openai/gpt-oss-20b"
+
+    def __init__(self, structured=None, text="chunk summary"):
+        self.structured = list(structured or [VALID_OUTPUT])
+        self.text = text
+        self.text_calls = []
+        self.structured_calls = []
+
+    async def generate_text(self, **kwargs):
+        self.text_calls.append(kwargs)
+        return ProviderTextResult(
+            self.text,
+            "groq",
+            self.text_model,
+            "stop",
+            TokenUsage(10, 5),
+        )
+
+    async def generate_structured(self, **kwargs):
+        self.structured_calls.append(kwargs)
+        value = self.structured.pop(0)
+        if isinstance(value, Exception):
+            raise value
+        return ProviderStructuredResult(
+            value,
+            "groq",
+            self.structured_model,
+            "stop",
+            TokenUsage(20, 10),
+        )
+
+    async def close(self):
+        return None
+
+
+class FakeStore:
+    def __init__(self, outcome="claimed"):
+        self.outcome = outcome
+        self.persisted = []
+        self.failed = []
+        self.claims = 0
+
+    async def claim(self, **kwargs):
+        self.claims += 1
+        return {"outcome": self.outcome}
+
+    async def mark_provider_started(self, **kwargs):
+        return True
+
+    async def fail(self, **kwargs):
+        self.failed.append(kwargs)
+
+    async def persist(self, payload):
+        self.persisted.append(payload)
+        actions = [
+            {
+                "id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+                **payload["p_actions"][0],
+                "review_status": "pending",
+                "reviewed_at": None,
+            }
+        ]
+        return {
+            "meeting_id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+            "formatted_result": payload["p_summary_html"],
+            "plain_text_summary": payload["p_summary_text"],
+            "email_subject": payload["p_email_subject"],
+            "ai_provider": payload["p_provider"],
+            "ai_model": payload["p_model"],
+            "prompt_version": payload["p_prompt_version"],
+            "finish_reason": payload["p_finish_reason"],
+            "actions": actions,
+        }
+
+    async def get_result(self, **kwargs):
+        return {
+            "meeting_id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+            "formatted_result": "<p>Saved</p>",
+            "plain_text_summary": "Saved",
+            "email_subject": "Saved result",
+            "ai_provider": "groq",
+            "ai_model": "openai/gpt-oss-20b",
+            "prompt_version": "phase2e-v1",
+            "finish_reason": "stop",
+            "actions": [],
+        }
+
+
+def settings(**overrides):
+    values = {
+        "ai_enabled": True,
+        "ai_provider": "groq",
+        "groq_api_key": "test",
+        "ai_text_model": "openai/gpt-oss-20b",
+        "ai_structured_model": "openai/gpt-oss-20b",
+        "ai_chunk_chars": 100,
+        "ai_max_chunks": 5,
+        "ai_max_input_chars": 500,
+        "ai_max_estimated_input_tokens": 500,
+    }
+    values.update(overrides)
+    return replace(configured_settings(), **values)
+
+
+@pytest.mark.asyncio
+async def test_meeting_generation_separates_prompts_validates_email_and_escapes_html():
+    provider = FakeProvider()
+    store = FakeStore()
+    service = AIService(settings(), provider, store)
+    response = await service.generate_meeting(
+        user_id=USER_ID,
+        idempotency_key=KEY,
+        request=MeetingGenerationRequest(
+            source_text="Alice will send the plan.",
+            role="Engineer",
+            target_language="French",
+        ),
+    )
+    assert response.actions[0].assignee_email is None
+    assert "<script>" not in response.formatted_result
+    assert "&lt;script&gt;" in response.formatted_result
+    messages = provider.structured_calls[0]["messages"]
+    assert messages[0].role == "system"
+    assert "Alice will send" not in messages[0].content
+    assert messages[1].role == "user"
+    assert "Alice will send" in messages[1].content
+    assert "test-only-secret" not in "".join(item.content for item in messages)
+    assert store.persisted[0]["p_provider"] == "groq"
+    assert store.persisted[0]["p_prompt_version"] == "phase2e-v1"
+
+
+@pytest.mark.asyncio
+async def test_email_present_in_source_is_retained():
+    provider = FakeProvider()
+    service = AIService(settings(), provider, FakeStore())
+    result = await service.generate_meeting(
+        user_id=USER_ID,
+        idempotency_key=KEY,
+        request=MeetingGenerationRequest(
+            source_text="Contact invented@example.com about the plan."
+        ),
+    )
+    assert result.actions[0].assignee_email == "invented@example.com"
+
+
+@pytest.mark.asyncio
+async def test_malformed_output_gets_only_one_repair_attempt_and_is_not_saved():
+    provider = FakeProvider(structured=[{"extra": "bad"}, {"still": "bad"}])
+    store = FakeStore()
+    with pytest.raises(AIMalformedResponseError):
+        await AIService(settings(), provider, store).generate_meeting(
+            user_id=USER_ID,
+            idempotency_key=KEY,
+            request=MeetingGenerationRequest(source_text="Valid source"),
+        )
+    assert len(provider.structured_calls) == 2
+    assert store.persisted == []
+    assert store.failed[0]["category"] == "malformed_provider_response"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "invalid_output",
+    [
+        {**VALID_OUTPUT, "email_subject": "bad\r\nBcc: victim@example.com"},
+        {**VALID_OUTPUT, "actions": [{**VALID_OUTPUT["actions"][0], "deadline": "not-a-date"}]},
+        {
+            **VALID_OUTPUT,
+            "actions": [
+                {
+                    **VALID_OUTPUT["actions"][0],
+                    "start_date": "2026-09-23",
+                    "deadline": "2026-09-22",
+                }
+            ],
+        },
+        {**VALID_OUTPUT, "actions": [{**VALID_OUTPUT["actions"][0], "unexpected": True}]},
+    ],
+)
+async def test_invalid_structured_fields_are_never_persisted(invalid_output):
+    provider = FakeProvider(structured=[invalid_output, invalid_output])
+    store = FakeStore()
+    with pytest.raises(AIMalformedResponseError):
+        await AIService(settings(), provider, store).generate_meeting(
+            user_id=USER_ID,
+            idempotency_key=KEY,
+            request=MeetingGenerationRequest(source_text="Valid source"),
+        )
+    assert store.persisted == []
+    assert len(provider.structured_calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_long_input_is_chunked_sequentially_and_bounded():
+    provider = FakeProvider()
+    store = FakeStore()
+    source = "First paragraph. " * 8 + "\n\n" + "Second paragraph. " * 8
+    await AIService(settings(), provider, store).generate_meeting(
+        user_id=USER_ID,
+        idempotency_key=KEY,
+        request=MeetingGenerationRequest(source_text=source),
+    )
+    assert 1 < len(provider.text_calls) <= 5
+    assert len(provider.structured_calls) == 1
+    assert store.persisted[0]["p_provider_call_count"] == len(provider.text_calls) + 1
+    chunk_data = "".join(call["messages"][1].content for call in provider.text_calls)
+    assert "First paragraph" in chunk_data
+    assert "Second paragraph" in chunk_data
+
+
+@pytest.mark.asyncio
+async def test_normal_input_uses_one_structured_call_and_no_chunk_calls():
+    provider = FakeProvider()
+    await AIService(settings(), provider, FakeStore()).generate_meeting(
+        user_id=USER_ID,
+        idempotency_key=KEY,
+        request=MeetingGenerationRequest(source_text="A short source."),
+    )
+    assert provider.text_calls == []
+    assert len(provider.structured_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_overflow_is_rejected_without_provider_call():
+    provider = FakeProvider()
+    with pytest.raises(AIInputTooLargeError):
+        await AIService(settings(ai_max_input_chars=20), provider, FakeStore()).generate_meeting(
+            user_id=USER_ID,
+            idempotency_key=KEY,
+            request=MeetingGenerationRequest(source_text="x" * 21),
+        )
+    assert provider.text_calls == []
+    assert provider.structured_calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("outcome", "expected"),
+    [("conflict", AIIdempotencyConflict), ("processing", AIGenerationInProgress)],
+)
+async def test_claim_conflict_or_active_processing_never_calls_provider(outcome, expected):
+    provider = FakeProvider()
+    with pytest.raises(expected):
+        await AIService(settings(), provider, FakeStore(outcome)).generate_meeting(
+            user_id=USER_ID,
+            idempotency_key=KEY,
+            request=MeetingGenerationRequest(source_text="source"),
+        )
+    assert provider.structured_calls == []
+
+
+@pytest.mark.asyncio
+async def test_completed_replay_reconstructs_result_without_provider_call():
+    provider = FakeProvider()
+    result = await AIService(settings(), provider, FakeStore("completed")).generate_meeting(
+        user_id=USER_ID,
+        idempotency_key=KEY,
+        request=MeetingGenerationRequest(source_text="source"),
+    )
+    assert result.plain_text_summary == "Saved"
+    assert provider.structured_calls == []
+
+
+@pytest.mark.asyncio
+async def test_topic_indexes_are_sorted_and_deduplicated_deterministically():
+    provider = FakeProvider(
+        structured=[
+            {
+                "topics": [
+                    {"topic": "Zulu", "index": 3},
+                    {"topic": "Alpha", "index": 3},
+                    {"topic": "Start", "index": 0},
+                ]
+            }
+        ]
+    )
+    topics = await AIService(settings(), provider, FakeStore()).detect_topics("abcdef")
+    assert [(item.topic, item.index) for item in topics] == [("Start", 0), ("Alpha", 3)]
+
+
+@pytest.mark.asyncio
+async def test_out_of_range_topics_are_rejected_after_one_repair():
+    invalid = {"topics": [{"topic": "Outside", "index": 99}]}
+    provider = FakeProvider(structured=[invalid, invalid])
+    with pytest.raises(AIMalformedResponseError):
+        await AIService(settings(), provider, FakeStore()).detect_topics("short")
+    assert len(provider.structured_calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_action_count_cap_prevents_partial_save():
+    provider = FakeProvider(structured=[VALID_OUTPUT, VALID_OUTPUT])
+    store = FakeStore()
+    with pytest.raises(AIMalformedResponseError):
+        await AIService(settings(ai_max_action_items=0), provider, store).generate_meeting(
+            user_id=USER_ID,
+            idempotency_key=KEY,
+            request=MeetingGenerationRequest(source_text="source"),
+        )
+    assert store.persisted == []
+
+
+@pytest.mark.asyncio
+async def test_question_budget_counts_question_and_serialized_context():
+    provider = FakeProvider()
+    service = AIService(
+        settings(ai_max_input_chars=25, ai_max_estimated_input_tokens=500),
+        provider,
+        FakeStore(),
+    )
+    with pytest.raises(AIInputTooLargeError):
+        await service.answer_question(question="why", context="x" * 20)
+    assert provider.text_calls == []

@@ -11,18 +11,8 @@ from pypdf import PdfReader
 import assemblyai as aai
 from datetime import datetime
 import config
-import google.generativeai as genai
-from langdetect import detect, LangDetectException
 
 logger = logging.getLogger(__name__)
-
-AI_PROVIDER = "google_gemini"
-AI_MODEL = "gemini-2.5-flash"
-
-
-DEFAULT_ROLES = {    
-    "general overview", "No Selection", "general", "normal", "full review", "default", "standard", "all", "overall", "unfiltered", "everyone", "comprehensive"
-}
 
 async def read_text_from_file(file: UploadFile):
     filename = file.filename.lower()
@@ -50,7 +40,7 @@ async def read_text_from_file(file: UploadFile):
                 detail=f"Unsupported file type: '{filename}'. Please upload a PDF, DOCX, or TXT file.",
             )
     except Exception as e:
-        logger.error(f"Error reading file {file.filename}: {e}")
+        logger.error("File processing failed")
         raise HTTPException(status_code=500, detail=f"Failed to process file: {e}")
 
 
@@ -77,7 +67,7 @@ async def transcribe_with_assemblyai(file: UploadFile, language: str):
             
             
             config_params["language_code"] = language
-            logger.info(f"AssemblyAI transcription running with language detection, boosted for: {language}")
+            logger.info("AssemblyAI transcription started with an explicit language")
 
         config = aai.TranscriptionConfig(**config_params)
         transcriber = aai.Transcriber()
@@ -86,7 +76,7 @@ async def transcribe_with_assemblyai(file: UploadFile, language: str):
         transcript = await asyncio.to_thread(transcriber.transcribe, file.file, config)
 
         if transcript.status == aai.TranscriptStatus.error:
-            logger.error(f"AssemblyAI transcription failed: {transcript.error}")
+            logger.error("AssemblyAI transcription failed")
             raise HTTPException(status_code=500, detail=transcript.error)
 
  
@@ -101,106 +91,9 @@ async def transcribe_with_assemblyai(file: UploadFile, language: str):
             return transcript.text
 
     except Exception as e:
-        logger.error(f"AssemblyAI transcription failed for {file.filename}: {e}")
+        logger.error("AssemblyAI transcription failed")
         raise HTTPException(status_code=500, detail=f"Transcription failed: {e}")
 
-
-
-async def generate_gemini_content(prompt: str, model_name: str = AI_MODEL, is_json: bool = False):
-    try:
-        model = genai.GenerativeModel(model_name)
-        response_type = "application/json" if is_json else "text/plain"
-        generation_config = genai.types.GenerationConfig(response_mime_type=response_type)
-        response = await model.generate_content_async(prompt, generation_config=generation_config)
-        return response.text
-    except Exception as e:
-        logger.error(f"Gemini API call failed: {e}")
-        raise HTTPException(status_code=500, detail=f"AI content generation failed: {e}")
-
-
-
-async def role_summary(general_summary: str, role:str):
-        
-    if not role or role.strip().lower() in DEFAULT_ROLES:
-        logger.info("No specific role selected. Returning general summary.")
-        return general_summary
-
-    logger.info(f"Refining summary for role: {role}")
-
-    
-    refine_prompt = f"""
-            You are an expert at refining summaries for a specific person's role. Your task is to revise the provided General Summary to be specifically relevant for the person in the '{role}'.
-
-            First, analyze the "General Summary to Refine" to determine if the '{role}' is mentioned or has any assigned tasks or direct relevance.
-
-            ---
-            IF THE ROLE IS MENTIONED or has relevant tasks/decisions:
-            - The output MUST be a filtered summary.
-            - Focus ONLY on the key decisions and action items that directly impact or are assigned to the '{role}'.
-            - Omit all details not relevant to this specific role.
-            - Maintain the original language and structure (headings, bullet points).
-            - You MUST only use information present in the 'General Summary to Refine'.
-            - Do not use markdown like ``, # or **.
-
-            IF THE ROLE IS NOT MENTIONED and has no relevance:
-            - You MUST return the original "General Summary to Refine" exactly as it is.
-            - Add a note at the very top: "This summary is not specific to the '{role}' role, as it was not a focus of the discussion. Here is the general summary:"
-            - Do not add or assume any other information.
-            - Do not use markdown like ``, # or **.
-            ---
-
-            General Summary to Refine:
-            {general_summary}
-            ---
-    """
-
-    refined_summary = await generate_gemini_content(refine_prompt)
-    return refined_summary
-
-#This checks if the summary language matches the original text language.
-#If not, it translates the summary to the correct language.
-async def correct_summary_language(original_text: str, summary_text: str):
-    
-    try:
-       
-        try:
-            
-            original_lang = detect(original_text[:1000])
-        except LangDetectException:
-            logger.warning("Could not detect language of original text. Skipping correction.")
-            return summary_text
-            
-        try:
-            summary_lang = detect(summary_text)
-        except LangDetectException:
-            logger.warning("Could not detect language of summary. Skipping correction.")
-            return summary_text
-
-        logger.info(f"Detected original language: {original_lang}, Detected summary language: {summary_lang}")
-
-        
-        if original_lang != summary_lang:
-            logger.warning(f"Language mismatch detected. Translating summary from '{summary_lang}' to '{original_lang}'.")
-            
-            correction_prompt = f"""Translate the following text into the language with the ISO 639-1 code '{original_lang}'.
-                Maintain the Structure of the text. Do not add any interpretation or assumptions. Provide ONLY the translated text.
-
-                Text to translate:
-                ---
-                {summary_text}
-                ---
-                """
-            
-            corrected_summary = await generate_gemini_content(correction_prompt)
-            return corrected_summary
-        else:
-            
-            return summary_text
-
-    except Exception as e:
-        logger.error(f"An unexpected error occurred during language correction: {e}")
-        # In case of any other error, it's safer to return the original summary
-        return summary_text
 
 
 async def send_email_via_brevo(recipient_email, subject, html_content, sender_name="AI Meeting Wizard"):
@@ -217,13 +110,13 @@ async def send_email_via_brevo(recipient_email, subject, html_content, sender_na
         try:
             response = await client.post("https://api.brevo.com/v3/smtp/email", json=payload, headers=headers, timeout=30.0)
             response.raise_for_status()
-            logger.info(f"Email sent successfully to {recipient_email}")
+            logger.info("Email provider accepted the message")
             return True
-        except httpx.HTTPStatusError as e:
-            logger.error(f"Brevo API Error sending to {recipient_email}: {e.response.text}")
+        except httpx.HTTPStatusError:
+            logger.error("Email provider rejected the message")
             return False
-        except Exception as e:
-            logger.error(f"An unexpected error occurred while sending email to {recipient_email}: {e}")
+        except Exception:
+            logger.error("Email delivery failed")
             return False
 
 

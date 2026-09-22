@@ -1,8 +1,7 @@
 
 fastapi[all]
 python-dotenv
-google-generativeai
-langdetect
+groq==1.7.0
 assemblyai
 pypdf
 python-docx

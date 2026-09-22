@@ -4,14 +4,6 @@ import { supabase } from "./supabaseClient.js";
 const MEETING_PAGE_SIZE = 20;
 const MAX_MEETING_PAGE_SIZE = 50;
 const MAX_ACTION_LIST_SIZE = 500;
-const ALLOWED_SOURCE_TYPES = new Set([
-  "text",
-  "document",
-  "audio",
-  "video",
-  "microphone",
-  "system_audio",
-]);
 const ALLOWED_STATUSES = new Set([
   "not_started",
   "in_progress",
@@ -131,27 +123,6 @@ function normalizeActionFields(action, operation, { includeStatus = true } = {})
   return normalized;
 }
 
-export function normalizeExtractedActions(actions) {
-  const operation = "meeting save";
-  if (!Array.isArray(actions) || actions.length > 100) {
-    fail(operation, "invalid_actions");
-  }
-  return actions.map((action) => {
-    const normalized = normalizeActionFields(
-      { ...action, title: action?.title ?? action?.task },
-      operation,
-      { includeStatus: false }
-    );
-    return {
-      title: normalized.title,
-      assignee: normalized.assignee,
-      assigneeEmail: normalized.assigneeEmail,
-      startDate: normalized.startDate,
-      deadline: normalized.deadline,
-    };
-  });
-}
-
 export function statusLabel(status) {
   return STATUS_LABELS[status] || "Unknown";
 }
@@ -200,6 +171,7 @@ export function mapMeetingRow(row) {
     targetLanguage: row.target_language || null,
     aiProvider: row.ai_provider || null,
     aiModel: row.ai_model || null,
+    promptVersion: row.prompt_version || null,
     actions: Array.isArray(row.extracted_actions_snapshot)
       ? row.extracted_actions_snapshot.map((action) => ({
           title: typeof action?.title === "string" ? action.title : "Untitled action",
@@ -209,6 +181,12 @@ export function mapMeetingRow(row) {
             typeof action?.assigneeEmail === "string" ? action.assigneeEmail : null,
           startDate: typeof action?.startDate === "string" ? action.startDate : null,
           deadline: typeof action?.deadline === "string" ? action.deadline : null,
+          evidence: typeof action?.evidence === "string" ? action.evidence : null,
+          reviewStatus: ["pending", "confirmed", "rejected"].includes(
+            action?.reviewStatus
+          )
+            ? action.reviewStatus
+            : "pending",
         }))
       : [],
     createdAt: row.created_at || null,
@@ -227,6 +205,15 @@ export function mapActionRow(row) {
     assigneeEmail: row.assignee_email || null,
     status: ALLOWED_STATUSES.has(row.status) ? row.status : "not_started",
     source: row.source === "ai_generated" ? "ai_generated" : "manual",
+    reviewStatus: ["pending", "confirmed", "rejected"].includes(
+      row.review_status
+    )
+      ? row.review_status
+      : row.source === "ai_generated"
+        ? "pending"
+        : "confirmed",
+    reviewedAt: row.reviewed_at || null,
+    evidence: row.ai_evidence || row.evidence || null,
     startDate: row.start_date || null,
     deadline: row.deadline || null,
     createdAt: row.created_at || null,
@@ -264,69 +251,6 @@ export async function updateCurrentProfile(displayName) {
   return data;
 }
 
-export async function saveMeetingWithActions(meeting) {
-  const operation = "meeting save";
-  await verifiedUser(operation);
-  const requestId = requireUuid(meeting?.clientRequestId, operation, "request_id");
-  const sourceType = requiredText(meeting?.sourceType, 32, operation, "source_type");
-  if (!ALLOWED_SOURCE_TYPES.has(sourceType)) fail(operation, "invalid_source_type");
-
-  const sourceText = requiredText(meeting?.sourceText, 500000, operation, "source_text");
-  const summaryText = requiredText(meeting?.summaryText, 250000, operation, "summary_text");
-  const actions = normalizeExtractedActions(meeting?.actions || []);
-
-  const data = unwrap(
-    await supabase.rpc("save_meeting_with_actions", {
-      p_client_request_id: requestId,
-      p_source_type: sourceType,
-      p_source_filename: optionalText(
-        meeting?.sourceFilename,
-        255,
-        operation,
-        "source_filename"
-      ),
-      p_source_html: optionalText(meeting?.sourceHtml, 500000, operation, "source_html"),
-      p_source_text: sourceText,
-      p_summary_html: optionalText(
-        meeting?.summaryHtml,
-        250000,
-        operation,
-        "summary_html"
-      ),
-      p_summary_text: summaryText,
-      p_email_subject: optionalText(
-        meeting?.emailSubject,
-        200,
-        operation,
-        "email_subject"
-      ),
-      p_requested_role: optionalText(
-        meeting?.requestedRole,
-        100,
-        operation,
-        "requested_role"
-      ),
-      p_target_language: optionalText(
-        meeting?.targetLanguage,
-        100,
-        operation,
-        "target_language"
-      ),
-      p_ai_provider: optionalText(
-        meeting?.aiProvider,
-        50,
-        operation,
-        "ai_provider"
-      ),
-      p_ai_model: optionalText(meeting?.aiModel, 100, operation, "ai_model"),
-      p_actions: actions,
-    }),
-    operation
-  );
-
-  return requireUuid(data, operation, "meeting_id");
-}
-
 export async function listMeetingRecords({ offset = 0, limit = MEETING_PAGE_SIZE } = {}) {
   const operation = "meeting list";
   await verifiedUser(operation);
@@ -339,7 +263,7 @@ export async function listMeetingRecords({ offset = 0, limit = MEETING_PAGE_SIZE
     await supabase
       .from("meeting_records")
       .select(
-        "id, source_type, source_filename, source_html, source_text, summary_html, summary_text, email_subject, requested_role, target_language, ai_provider, ai_model, extracted_actions_snapshot, created_at"
+        "id, source_type, source_filename, source_html, source_text, summary_html, summary_text, email_subject, requested_role, target_language, ai_provider, ai_model, prompt_version, extracted_actions_snapshot, created_at"
       )
       .order("created_at", { ascending: false })
       .order("id", { ascending: false })
@@ -361,7 +285,7 @@ export async function listActionItems() {
     await supabase
       .from("action_items")
       .select(
-        "id, meeting_id, title, assignee, assignee_email, status, source, start_date, deadline, created_at"
+        "id, meeting_id, title, assignee, assignee_email, status, source, start_date, deadline, review_status, reviewed_at, ai_evidence, created_at"
       )
       .order("created_at", { ascending: false })
       .limit(MAX_ACTION_LIST_SIZE),
@@ -387,7 +311,7 @@ export async function createActionItem(action) {
         deadline: normalized.deadline,
       })
       .select(
-        "id, meeting_id, title, assignee, assignee_email, status, source, start_date, deadline, created_at"
+        "id, meeting_id, title, assignee, assignee_email, status, source, start_date, deadline, review_status, reviewed_at, ai_evidence, created_at"
       )
       .maybeSingle(),
     operation
@@ -415,7 +339,7 @@ export async function updateActionItem(id, action) {
       .eq("id", id)
       .eq("user_id", user.id)
       .select(
-        "id, meeting_id, title, assignee, assignee_email, status, source, start_date, deadline, created_at"
+        "id, meeting_id, title, assignee, assignee_email, status, source, start_date, deadline, review_status, reviewed_at, ai_evidence, created_at"
       )
       .maybeSingle(),
     operation

@@ -1,16 +1,33 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-from config import get_settings, load_html_templates, setup_gemini_api, setup_logging
+from ai.factory import create_ai_resources
+from ai.router import router as ai_router
+from config import get_settings, load_html_templates, setup_logging
 from routers import router as api_router
 
 
 setup_logging()
 settings = get_settings()
-setup_gemini_api()
 load_html_templates()
+ai_resources = create_ai_resources(settings)
 
-app = FastAPI(title="Ally API")
+
+@asynccontextmanager
+async def lifespan(application: FastAPI):
+    application.state.ai_service = ai_resources.service
+    application.state.ai_store = ai_resources.store
+    try:
+        yield
+    finally:
+        await ai_resources.close()
+
+
+app = FastAPI(title="Ally API", lifespan=lifespan)
+app.state.ai_service = ai_resources.service
+app.state.ai_store = ai_resources.store
 
 app.add_middleware(
     CORSMiddleware,
@@ -42,6 +59,7 @@ async def add_security_headers(request: Request, call_next):
 
 
 app.include_router(api_router)
+app.include_router(ai_router)
 
 
 @app.get("/", include_in_schema=False)
