@@ -297,7 +297,7 @@ async def send_email_endpoint(
         final_html = final_html.replace("[PROJECT_NAME]", "Ally")
         final_html = final_html.replace("[MAIN_CONTENT_HTML]", sanitized_body)
         final_html = final_html.replace(
-            "[MY_URL]", "https://ally-vimd.onrender.com"
+            "[MY_URL]", "https://ally-frontend-vw00.onrender.com"
         )
     else:
         final_html = sanitized_body
