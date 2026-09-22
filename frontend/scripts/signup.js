@@ -1,95 +1,125 @@
-import { auth, db } from "./firebaseInit.js";
 import {
-  createUserWithEmailAndPassword,
-  updateProfile,
-} from "https://www.gstatic.com/firebasejs/11.9.1/firebase-auth.js";
+  requireAuthenticatedUser,
+  signUp,
+} from "./authService.js";
 import {
-  doc,
-  setDoc,
-  serverTimestamp,
-} from "https://www.gstatic.com/firebasejs/11.9.1/firebase-firestore.js";
+  createCaptchaWidget,
+  isCaptchaFailure,
+} from "./captchaService.js";
 
 const signupForm = document.getElementById("the-signup-form");
 const signupBtn = document.getElementById("signup-btn");
 const errorDiv = document.getElementById("error-box");
 const successDiv = document.getElementById("success-popup");
+const signupCaptcha = createCaptchaWidget({
+  container: document.getElementById("signup-captcha"),
+  statusElement: document.getElementById("signup-captcha-status"),
+  tokenInput: signupForm.querySelector('[name="captcha-token"]'),
+});
 
-signupForm.addEventListener("submit", async (e) => {
-  e.preventDefault();
+function setPending(pending) {
+  signupBtn.disabled = pending;
+  signupBtn.textContent = pending ? "Working on it..." : "Sign Up";
+}
 
-  signupBtn.disabled = true;
-  signupBtn.textContent = "Working on it...";
+function displayError(message) {
+  errorDiv.textContent = message;
+  errorDiv.style.display = "block";
+}
+
+function displaySuccess(message) {
+  successDiv.textContent = message;
+  successDiv.classList.remove("hidden");
+}
+
+async function redirectAuthenticatedUser() {
+  try {
+    if (await requireAuthenticatedUser()) {
+      window.location.replace("home.html");
+    }
+  } catch {
+    displayError("Sign up is temporarily unavailable. Please try again later.");
+  }
+}
+
+signupForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (signupBtn.disabled) return;
 
   errorDiv.style.display = "none";
+  successDiv.classList.add("hidden");
 
-  const username = document.getElementById("username").value;
-  const email = document.getElementById("email").value;
+  const displayName = document.getElementById("username").value.trim();
+  const email = document.getElementById("email").value.trim().toLowerCase();
   const password = document.getElementById("password").value;
-  const confirmPass = document.getElementById("confirm-password").value;
+  const passwordConfirmation = document.getElementById("confirm-password").value;
 
-  if (password !== confirmPass) {
-    displayErrorMsg("Passwords do not match.");
+  if (!displayName || displayName.length > 100) {
+    displayError("Please enter a display name of 100 characters or fewer.");
+    return;
+  }
+  if (password !== passwordConfirmation) {
+    displayError("Passwords do not match.");
+    return;
+  }
+  if (password.length < 8) {
+    displayError("Use a password with at least 8 characters.");
     return;
   }
 
   try {
-    const newUser = await createUserWithEmailAndPassword(auth, email, password);
-    const user = newUser.user;
+    await signupCaptcha.mount();
+  } catch {
+    displayError(
+      "Security check is unavailable. Check your connection and refresh the page."
+    );
+    return;
+  }
 
-    await updateProfile(user, {
-      displayName: username,
+  const captchaToken = signupCaptcha.getToken();
+  if (!captchaToken) {
+    displayError("Please complete the security check before signing up.");
+    return;
+  }
+
+  setPending(true);
+  try {
+    const { data, error } = await signUp({
+      displayName,
+      email,
+      password,
+      captchaToken,
     });
+    if (error) throw error;
 
-    const userDoc = doc(db, "users", user.uid);
-    await setDoc(userDoc, {
-      username: username,
-      email: email,
-      createdAt: serverTimestamp(),
-    });
-
-    displaySuccessMsg("Registration successful! Redirecting...");
-
-    try {
-      const backendUrl =
-        "https://ally-backend-y2pq.onrender.com/send-welcome-email";
-      await fetch(backendUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: user.email, username: username }),
-      });
-    } catch (emailError) {
-      console.error("couldnt send the welcome email", emailError);
+    if (data.session) {
+      displaySuccess("Registration successful. Redirecting...");
+      window.setTimeout(() => window.location.replace("home.html"), 800);
+    } else {
+      displaySuccess(
+        "If the address can be registered, a confirmation email will arrive shortly. Please check your inbox."
+      );
+      signupForm.reset();
     }
-
-    setTimeout(() => {
-      window.location.href = "home.html";
-    }, 2000);
   } catch (error) {
-    console.error("Sign up failed:", error);
-    let friendlyMessage = "Something went wrong. Please try again.";
-
-    if (error.code == "auth/email-already-in-use") {
-      friendlyMessage =
-        "This email address is already in use. Please try another one or sign in.";
-    } else if (error.code == "auth/invalid-email") {
-      friendlyMessage = "Please enter a valid email address.";
-    } else if (error.code == "auth/weak-password") {
-      friendlyMessage =
-        "The password is too weak. Please use at least 6 characters.";
+    if (error?.status === 429) {
+      displayError("Too many attempts. Please wait before trying again.");
+    } else if (isCaptchaFailure(error)) {
+      displayError("Security check failed or expired. Please try again.");
+    } else if (error?.code === "email_address_invalid") {
+      displayError("Please enter a valid email address.");
+    } else {
+      displayError("Sign up could not be completed. Please try again.");
     }
-    displayErrorMsg(friendlyMessage);
+  } finally {
+    signupCaptcha.reset();
+    setPending(false);
   }
 });
 
-function displayErrorMsg(message) {
-  errorDiv.textContent = message;
-  errorDiv.style.display = "block";
-
-  signupBtn.disabled = false;
-  signupBtn.textContent = "Sign Up";
-}
-
-function displaySuccessMsg(message) {
-  successDiv.textContent = message;
-  successDiv.classList.remove("hidden");
-}
+signupCaptcha.mount().catch(() => {
+  displayError(
+    "Security check is unavailable. Check your connection and refresh the page."
+  );
+});
+redirectAuthenticatedUser();

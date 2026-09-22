@@ -1,494 +1,588 @@
 import { initializeApp } from "./appLogic.js";
-
 import {
-  collection,
-  query,
-  onSnapshot,
-  addDoc,
-  doc,
-  updateDoc,
-  deleteDoc,
-  serverTimestamp,
-} from "https://www.gstatic.com/firebasejs/11.9.1/firebase-firestore.js";
+  createActionItem,
+  deleteActionItem,
+  isDateOverdue,
+  listActionItems,
+  sourceLabel,
+  statusLabel,
+  subscribeToActionItems,
+  updateActionItem,
+} from "./dataService.js";
+import { requestManualReminder } from "./reminderClient.js";
+import { reviewActionItem } from "./aiClient.js";
 
-const actionPage = (user, db) => {
-  const MY_API = "https://ally-backend-y2pq.onrender.com";
-  const currentUser = user;
-  const actionLogsCollectionRef = collection(
-    db,
-    `users/${user.uid}/actionLogs`
+const STATUS_OPTIONS = Object.freeze([
+  ["not_started", "Not Started"],
+  ["in_progress", "In Progress"],
+  ["completed", "Completed"],
+]);
+
+function createElement(tag, className, text) {
+  const element = document.createElement(tag);
+  if (className) element.className = className;
+  if (text !== undefined) element.textContent = text;
+  return element;
+}
+
+async function actionPage() {
+  const elements = {
+    tableBody: document.getElementById("action-items-tbody"),
+    search: document.getElementById("search-input"),
+    modal: document.getElementById("task-modal"),
+    form: document.getElementById("task-form"),
+    modalTitle: document.getElementById("modal-title"),
+    id: document.getElementById("task-id"),
+    title: document.getElementById("task-title"),
+    assignee: document.getElementById("task-assignee"),
+    email: document.getElementById("task-assignee-email"),
+    status: document.getElementById("task-status"),
+    startDate: document.getElementById("task-start-date"),
+    deadline: document.getElementById("task-deadline"),
+    dateError: document.getElementById("date-error"),
+    create: document.getElementById("create-task-btn"),
+    cancel: document.getElementById("cancel-btn"),
+    clearFilters: document.getElementById("clear-filters-btn"),
+    assigneeDropdown: document.getElementById("assignee-dropdown"),
+    statusDropdown: document.getElementById("status-dropdown"),
+  };
+  if (Object.values(elements).some((element) => !element)) return;
+
+  const tasks = new Map();
+  let filters = { search: "", assignee: "All", status: "All" };
+  let unsubscribe = null;
+  let realtimeTimer = null;
+  let loadSequence = 0;
+
+  const table = elements.tableBody.closest("table");
+  const notice = createElement(
+    "div",
+    "mb-4 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900",
+    "Reminders are sent to the assignee email stored on the action item."
   );
-  let unsubscribeFromTasks = null;
+  const reminderStatus = createElement("p", "mt-2 text-sm text-blue-800");
+  reminderStatus.setAttribute("role", "status");
+  reminderStatus.setAttribute("aria-live", "polite");
+  const connection = createElement("p", "mt-2 text-xs text-slate-500");
+  connection.setAttribute("role", "status");
+  connection.setAttribute("aria-live", "polite");
+  notice.append(reminderStatus, connection);
+  table?.parentElement?.insertAdjacentElement("beforebegin", notice);
 
-  let tasks = [];
-  const allStatuses = [
-    "Not Started",
-    "In Progress",
-    "Completed",
-    "Generated from Summary",
-  ];
-  const getAllAssignees = () => {
-    const assignees = [
-      ...new Set(tasks.map((t) => t.assignee).filter(Boolean)),
-    ].sort();
-    return assignees;
-  };
+  function showTableMessage(message, className = "text-gray-500") {
+    const row = document.createElement("tr");
+    const cell = createElement("td", `p-8 text-center ${className}`, message);
+    cell.colSpan = 6;
+    row.appendChild(cell);
+    elements.tableBody.replaceChildren(row);
+  }
 
-  const tableBody = document.getElementById("action-items-tbody");
-  const searchInput = document.getElementById("search-input");
-  const taskModal = document.getElementById("task-modal");
-  const taskForm = document.getElementById("task-form");
-  const modalTitle = document.getElementById("modal-title");
-  const taskIdInput = document.getElementById("task-id");
-  const taskTitleInput = document.getElementById("task-title");
-  const taskAssigneeInput = document.getElementById("task-assignee");
-  const taskAssigneeEmailInput = document.getElementById("task-assignee-email");
-  const taskStatusSelect = document.getElementById("task-status");
-  const taskStartDateInput = document.getElementById("task-start-date");
-  const taskDeadlineInput = document.getElementById("task-deadline");
-  const dateError = document.getElementById("date-error");
-  const createTaskBtn = document.getElementById("create-task-btn");
-  const cancelBtn = document.getElementById("cancel-btn");
-  const clearFiltersBtn = document.getElementById("clear-filters-btn");
+  function statusClass(status) {
+    if (status === "completed") return "bg-green-100 text-green-800";
+    if (status === "in_progress") return "bg-yellow-100 text-yellow-800";
+    return "bg-gray-100 text-gray-800";
+  }
 
-  const renderTable = (tasksToRender) => {
-    tableBody.innerHTML = "";
-    if (tasksToRender.length === 0) {
-      tableBody.innerHTML = `<tr>
-        <td colspan="6" class="p-8">
-          <div class="flex items-center justify-center text-center text-gray-500 h-full w-full">
-            No action items found.
-          </div>
-        </td>
-      </tr>`;
-      return;
-    }
+  function taskRow(task) {
+    const row = document.createElement("tr");
+    row.dataset.taskId = task.id;
 
-    tasksToRender.forEach((task) => {
-      const row = document.createElement("tr");
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const isOverdue =
-        task.deadline &&
-        new Date(task.deadline) < today &&
-        task.status !== "Completed";
-
-      const startDateText = task.startDate ? task.startDate : "N/A";
-      const deadlineText = task.deadline ? task.deadline : "N/A";
-
-      row.innerHTML = `
-                        <td data-label="Task" class="p-4 text-sm text-left text-[#0d141c]">${
-                          task.title || "No Title"
-                        }</td>
-                        <td data-label="Assignee" class="p-4 text-sm text-left text-[#49739c]">
-                            <div class="flex flex-col">
-                                <span class="font-medium text-[#0d141c]">${
-                                  task.assignee || "Unassigned"
-                                }</span>
-                                <span class="text-xs">${
-                                  task.assigneeEmail || ""
-                                }</span>
-                            </div>
-                        </td>
-                        <td data-label="Start Date" class="p-4 text-sm text-left text-[#49739c]">${startDateText}</td>
-                        <td data-label="Deadline" class="p-4 text-sm text-left ${
-                          isOverdue ? "text-danger" : "text-[#49739c]"
-                        }">${deadlineText}</td>
-                        <td data-label="Status" class="p-4 text-sm text-left"><span class="inline-block px-3 py-1 rounded-md text-xs font-medium ${
-                          task.status === "Completed"
-                            ? "bg-green-100 text-green-800"
-                            : task.status === "In Progress"
-                            ? "bg-yellow-100 text-yellow-800"
-                            : task.status === "Generated from Summary"
-                            ? "bg-purple-100 text-purple-800"
-                            : "bg-gray-100 text-gray-800"
-                        }">${task.status}</span></td>
-                        <td data-label="Actions" class="p-4 text-sm text-left">
-                            <div class="action-buttons-container">
-                                <button class="send-email-btn text-green-600 hover:text-green-800" data-id="${
-                                  task.id
-                                }" title="Send Reminder Email">
-                                    <img
-                                      src="/img/email.png"
-                                      alt="icon"
-                                      width="20"
-                                      height="20"
-                                      style="object-fit: contain"
-                                    />
-                                </button>
-                                <button class="edit-btn text-blue-600 hover:text-blue-800" data-id="${
-                                  task.id
-                                }" title="Edit Task">
-                                    <img
-                                      src="/img/edit.png"
-                                      alt="icon"
-                                      width="20"
-                                      height="20"
-                                      style="object-fit: contain"
-                                    />
-                                </button>
-                                <button class="delete-btn text-red-600 hover:text-red-800" data-id="${
-                                  task.id
-                                }" title="Delete Task">
-                                    <img
-                                      src="/img/delete.png"
-                                      alt="icon"
-                                      width="20"
-                                      height="20"
-                                      style="object-fit: contain"
-                                    />
-                                </button>
-                            </div>
-                        </td>
-                    `;
-      tableBody.appendChild(row);
-    });
-  };
-
-  const populateDropdown = (element, options, filterType) => {
-    element.innerHTML = `<a href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" data-value="All">All ${filterType}s</a>`;
-    options.forEach((opt) => {
-      element.innerHTML += `<a href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" data-value="${opt}">${opt}</a>`;
-    });
-  };
-
-  let currentFilters = { search: "", assignee: "All", status: "All" };
-
-  const applyFilters = () => {
-    let filteredTasks = [...tasks];
-    if (currentFilters.search) {
-      const searchTerm = currentFilters.search.toLowerCase();
-      filteredTasks = filteredTasks.filter(
-        (t) =>
-          (t.title || "").toLowerCase().includes(searchTerm) ||
-          (t.assignee || "").toLowerCase().includes(searchTerm) ||
-          (t.assigneeEmail || "").toLowerCase().includes(searchTerm)
-      );
-    }
-    if (currentFilters.assignee !== "All") {
-      filteredTasks = filteredTasks.filter(
-        (t) => (t.assignee || "Unassigned") === currentFilters.assignee
-      );
-    }
-    if (currentFilters.status !== "All") {
-      filteredTasks = filteredTasks.filter(
-        (t) => t.status === currentFilters.status
-      );
-    }
-    renderTable(filteredTasks);
-  };
-
-  const validateDates = () => {
-    if (
-      taskStartDateInput.value &&
-      taskDeadlineInput.value &&
-      taskDeadlineInput.value < taskStartDateInput.value
-    ) {
-      dateError.classList.remove("hidden");
-      taskDeadlineInput.classList.add(
-        "border-red-500",
-        "focus:border-red-500",
-        "focus:ring-red-500"
-      );
-      return false;
-    } else {
-      dateError.classList.add("hidden");
-      taskDeadlineInput.classList.remove(
-        "border-red-500",
-        "focus:border-red-500",
-        "focus:ring-red-500"
-      );
-      return true;
-    }
-  };
-
-  taskStartDateInput.addEventListener("change", () => {
-    if (taskStartDateInput.value) {
-      taskDeadlineInput.min = taskStartDateInput.value;
-
-      validateDates();
-    }
-  });
-  taskDeadlineInput.addEventListener("change", validateDates);
-
-  const openModal = (mode, taskId = null) => {
-    taskForm.reset();
-
-    dateError.classList.add("hidden");
-    taskDeadlineInput.classList.remove(
-      "border-red-500",
-      "focus:border-red-500",
-      "focus:ring-red-500"
+    const titleCell = createElement(
+      "td",
+      "p-4 text-sm text-left text-[#0d141c]"
     );
-    taskDeadlineInput.min = "";
+    titleCell.dataset.label = "Task";
+    titleCell.appendChild(createElement("span", "block", task.title));
+    const source = createElement(
+      "span",
+      task.source === "ai_generated"
+        ? "mt-1 inline-block rounded bg-purple-100 px-2 py-0.5 text-xs text-purple-800"
+        : "mt-1 inline-block rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600",
+      sourceLabel(task.source)
+    );
+    titleCell.appendChild(source);
+    if (task.source === "ai_generated") {
+      const review = createElement(
+        "span",
+        task.reviewStatus === "confirmed"
+          ? "ml-2 inline-block rounded bg-green-100 px-2 py-0.5 text-xs text-green-800"
+          : task.reviewStatus === "rejected"
+            ? "ml-2 inline-block rounded bg-red-100 px-2 py-0.5 text-xs text-red-800"
+            : "ml-2 inline-block rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-900",
+        task.reviewStatus === "confirmed"
+          ? "Confirmed"
+          : task.reviewStatus === "rejected"
+            ? "Rejected"
+            : "Needs review"
+      );
+      titleCell.appendChild(review);
+    }
 
-    populateDropdownOptions(
-      taskStatusSelect,
-      allStatuses.filter((s) => s !== "Generated from Summary")
+    const assigneeCell = createElement(
+      "td",
+      "p-4 text-sm text-left text-[#49739c]"
+    );
+    assigneeCell.dataset.label = "Assignee";
+    assigneeCell.appendChild(
+      createElement("span", "block font-medium text-[#0d141c]", task.assignee)
+    );
+    if (task.assigneeEmail) {
+      assigneeCell.appendChild(createElement("span", "block text-xs", task.assigneeEmail));
+    }
+
+    const startCell = createElement(
+      "td",
+      "p-4 text-sm text-left text-[#49739c]",
+      task.startDate || "N/A"
+    );
+    startCell.dataset.label = "Start Date";
+
+    const deadlineCell = createElement(
+      "td",
+      `p-4 text-sm text-left ${
+        isDateOverdue(task.deadline, task.status) ? "text-danger" : "text-[#49739c]"
+      }`,
+      task.deadline || "N/A"
+    );
+    deadlineCell.dataset.label = "Deadline";
+
+    const statusCell = createElement("td", "p-4 text-sm text-left");
+    statusCell.dataset.label = "Status";
+    statusCell.appendChild(
+      createElement(
+        "span",
+        `inline-block rounded-md px-3 py-1 text-xs font-medium ${statusClass(
+          task.status
+        )}`,
+        statusLabel(task.status)
+      )
     );
 
-    if (mode === "edit") {
-      const task = tasks.find((t) => t.id === taskId);
-      modalTitle.textContent = "Edit Task";
-      taskIdInput.value = task.id;
-      taskTitleInput.value = task.title;
-      taskAssigneeInput.value = task.assignee;
-      taskAssigneeEmailInput.value = task.assigneeEmail || "";
-      if (task.status === "In Progress" || task.status === "Completed") {
-        taskStatusSelect.value = task.status;
-      } else {
-        taskStatusSelect.value = "Not Started";
-      }
-      taskStartDateInput.value = task.startDate || "";
-      taskDeadlineInput.value = task.deadline || "";
-
-      if (task.startDate) {
-        taskDeadlineInput.min = task.startDate;
-      }
-    } else {
-      modalTitle.textContent = "Create Task";
-      taskIdInput.value = "";
-      taskStatusSelect.value = "Not Started";
-    }
-    taskModal.classList.remove("hidden");
-    taskModal.classList.add("flex");
-  };
-
-  const closeModal = () => {
-    taskModal.classList.add("hidden");
-    taskModal.classList.remove("flex");
-  };
-
-  const populateDropdownOptions = (selectElement, options) => {
-    selectElement.innerHTML = "";
-    options.forEach((opt) => {
-      const option = document.createElement("option");
-      option.value = opt;
-      option.textContent = opt;
-      selectElement.appendChild(option);
-    });
-  };
-
-  const fetchAndRenderTasks = () => {
-    if (!currentUser || !actionLogsCollectionRef) return;
-
-    tableBody.innerHTML =
-      '<tr><td colspan="6" class="text-center p-8 text-gray-500">Loading tasks...</td></tr>';
-
-    const q = query(actionLogsCollectionRef);
-
-    if (unsubscribeFromTasks) {
-      unsubscribeFromTasks();
-    }
-
-    unsubscribeFromTasks = onSnapshot(
-      q,
-      (querySnapshot) => {
-        tasks = [];
-        querySnapshot.forEach((doc) => {
-          tasks.push({ id: doc.id, ...doc.data() });
-        });
-
-        tasks.sort(
-          (a, b) =>
-            (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0)
+    const actionsCell = createElement("td", "p-4 text-sm text-left");
+    actionsCell.dataset.label = "Actions";
+    const actions = createElement("div", "action-buttons-container gap-3");
+    const edit = createElement(
+      "button",
+      "edit-btn text-blue-600 hover:text-blue-800",
+      "Edit"
+    );
+    edit.type = "button";
+    edit.dataset.id = task.id;
+    edit.title = "Edit task";
+    const remove = createElement(
+      "button",
+      "delete-btn text-red-600 hover:text-red-800",
+      "Delete"
+    );
+    remove.type = "button";
+    remove.dataset.id = task.id;
+    remove.title = "Delete task";
+    const remind = createElement(
+      "button",
+      "reminder-btn text-emerald-700 hover:text-emerald-900",
+      "Remind"
+    );
+    remind.type = "button";
+    remind.dataset.id = task.id;
+    const reviewEligible =
+      task.source !== "ai_generated" || task.reviewStatus === "confirmed";
+    remind.disabled =
+      !task.assigneeEmail || task.status === "completed" || !reviewEligible;
+    remind.title = !task.assigneeEmail
+      ? "Add an assignee email before sending a reminder"
+      : !reviewEligible
+        ? "Review and confirm this AI-proposed action before sending reminders"
+      : task.status === "completed"
+        ? "Completed actions do not need reminders"
+        : "Send a reminder to the stored assignee email";
+    if (task.source === "ai_generated") {
+      if (task.reviewStatus !== "confirmed") {
+        const confirm = createElement(
+          "button",
+          "confirm-btn text-green-700 hover:text-green-900",
+          "Confirm"
         );
-        applyFilters();
-        updateFilterDropdowns();
-      },
-      (error) => {
-        console.error("Error fetching tasks:", error);
-        tableBody.innerHTML = `<tr><td colspan="6" class="text-center p-8 text-red-500">Error: Could not load action items.</td></tr>`;
+        confirm.type = "button";
+        confirm.dataset.id = task.id;
+        confirm.title = "Confirm the visible task, recipient, and dates";
+        actions.appendChild(confirm);
       }
+      if (task.reviewStatus !== "rejected") {
+        const reject = createElement(
+          "button",
+          "reject-btn text-red-700 hover:text-red-900",
+          "Reject"
+        );
+        reject.type = "button";
+        reject.dataset.id = task.id;
+        reject.title = "Reject this AI proposal and disable reminders";
+        actions.appendChild(reject);
+      }
+    }
+    actions.append(remind, edit, remove);
+    actionsCell.appendChild(actions);
+
+    row.append(
+      titleCell,
+      assigneeCell,
+      startCell,
+      deadlineCell,
+      statusCell,
+      actionsCell
     );
-  };
+    return row;
+  }
 
-  taskForm.addEventListener("submit", async (e) => {
-    e.preventDefault();
+  function orderedTasks() {
+    return [...tasks.values()].sort((left, right) => {
+      const byDate = String(right.createdAt || "").localeCompare(
+        String(left.createdAt || "")
+      );
+      return byDate || String(right.id).localeCompare(String(left.id));
+    });
+  }
 
-    if (!validateDates()) {
+  function filteredTasks() {
+    const term = filters.search.toLocaleLowerCase();
+    return orderedTasks().filter((task) => {
+      const searchMatch =
+        !term ||
+        [task.title, task.assignee, task.assigneeEmail]
+          .filter(Boolean)
+          .some((value) => value.toLocaleLowerCase().includes(term));
+      const assigneeMatch =
+        filters.assignee === "All" || task.assignee === filters.assignee;
+      const statusMatch = filters.status === "All" || task.status === filters.status;
+      return searchMatch && assigneeMatch && statusMatch;
+    });
+  }
+
+  function renderTable() {
+    const visible = filteredTasks();
+    if (!visible.length) {
+      showTableMessage(
+        tasks.size
+          ? "No action items match the current filters."
+          : "No action items found."
+      );
       return;
     }
+    elements.tableBody.replaceChildren(...visible.map(taskRow));
+  }
 
-    if (!actionLogsCollectionRef) return;
+  function dropdownLink(label, value) {
+    const link = createElement(
+      "a",
+      "block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100",
+      label
+    );
+    link.href = "#";
+    link.dataset.value = value;
+    return link;
+  }
 
-    const id = taskIdInput.value;
-    const taskData = {
-      title: taskTitleInput.value,
-      assignee: taskAssigneeInput.value,
-      assigneeEmail: taskAssigneeEmailInput.value,
-      status: taskStatusSelect.value,
-      startDate: taskStartDateInput.value || null,
-      deadline: taskDeadlineInput.value || null,
-    };
+  function populateDropdown(element, options, allLabel) {
+    element.replaceChildren(dropdownLink(allLabel, "All"));
+    options.forEach(([value, label]) =>
+      element.appendChild(dropdownLink(label, value))
+    );
+  }
 
+  function updateFilterDropdowns() {
+    const assignees = [...new Set(orderedTasks().map((task) => task.assignee))]
+      .filter(Boolean)
+      .sort((left, right) => left.localeCompare(right));
+    populateDropdown(
+      elements.assigneeDropdown,
+      assignees.map((assignee) => [assignee, assignee]),
+      "All Assignees"
+    );
+    populateDropdown(elements.statusDropdown, STATUS_OPTIONS, "All Statuses");
+  }
+
+  async function loadTasks({ showLoading = false } = {}) {
+    const sequence = ++loadSequence;
+    if (showLoading) showTableMessage("Loading action items…");
     try {
-      if (id) {
-        const taskDocRef = doc(db, `users/${currentUser.uid}/actionLogs`, id);
-        await updateDoc(taskDocRef, taskData);
-      } else {
-        taskData.createdAt = serverTimestamp();
-        await addDoc(actionLogsCollectionRef, taskData);
+      const rows = await listActionItems();
+      if (sequence !== loadSequence) return;
+      tasks.clear();
+      rows.forEach((task) => tasks.set(task.id, task));
+      updateFilterDropdowns();
+      renderTable();
+    } catch {
+      if (sequence === loadSequence) {
+        showTableMessage(
+          "Action items could not be loaded. Check your connection and reload this page.",
+          "text-red-600"
+        );
       }
+    }
+  }
+
+  function validateDates() {
+    const invalid = Boolean(
+      elements.startDate.value &&
+        elements.deadline.value &&
+        elements.deadline.value < elements.startDate.value
+    );
+    elements.dateError.classList.toggle("hidden", !invalid);
+    elements.deadline.classList.toggle("border-red-500", invalid);
+    elements.deadline.classList.toggle("focus:border-red-500", invalid);
+    elements.deadline.classList.toggle("focus:ring-red-500", invalid);
+    return !invalid;
+  }
+
+  function populateStatusSelect() {
+    elements.status.replaceChildren();
+    STATUS_OPTIONS.forEach(([value, label]) => {
+      const option = createElement("option", "", label);
+      option.value = value;
+      elements.status.appendChild(option);
+    });
+  }
+
+  function openModal(mode, id = null) {
+    elements.form.reset();
+    populateStatusSelect();
+    elements.dateError.classList.add("hidden");
+    elements.deadline.min = "";
+    if (mode === "edit") {
+      const task = tasks.get(id);
+      if (!task) return;
+      elements.modalTitle.textContent = "Edit Task";
+      elements.id.value = task.id;
+      elements.title.value = task.title;
+      elements.assignee.value = task.assignee;
+      elements.email.value = task.assigneeEmail || "";
+      elements.status.value = task.status;
+      elements.startDate.value = task.startDate || "";
+      elements.deadline.value = task.deadline || "";
+      elements.deadline.min = task.startDate || "";
+    } else {
+      elements.modalTitle.textContent = "Create Task";
+      elements.id.value = "";
+      elements.status.value = "not_started";
+    }
+    elements.modal.classList.remove("hidden");
+    elements.modal.classList.add("flex");
+  }
+
+  function closeModal() {
+    elements.modal.classList.add("hidden");
+    elements.modal.classList.remove("flex");
+  }
+
+  elements.startDate.addEventListener("change", () => {
+    elements.deadline.min = elements.startDate.value || "";
+    validateDates();
+  });
+  elements.deadline.addEventListener("change", validateDates);
+
+  elements.form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!validateDates()) return;
+    const submit = elements.form.querySelector('button[type="submit"]');
+    if (submit) submit.disabled = true;
+    const id = elements.id.value;
+    const action = {
+      title: elements.title.value,
+      assignee: elements.assignee.value,
+      assigneeEmail: elements.email.value,
+      status: elements.status.value,
+      startDate: elements.startDate.value || null,
+      deadline: elements.deadline.value || null,
+    };
+    try {
+      const saved = id
+        ? await updateActionItem(id, action)
+        : await createActionItem(action);
+      tasks.set(saved.id, saved);
       closeModal();
-    } catch (error) {
-      console.error("Failed to save task:", error);
-      alert("Could not save task. Please check the connection and try again.");
+      updateFilterDropdowns();
+      renderTable();
+    } catch {
+      window.alert("The action item could not be saved. Check the fields and try again.");
+    } finally {
+      if (submit) submit.disabled = false;
     }
   });
 
-  tableBody.addEventListener("click", async (e) => {
-    const button = e.target.closest("button");
-    if (!button) return;
-
-    const id = button.dataset.id;
-
+  elements.tableBody.addEventListener("click", async (event) => {
+    const button = event.target.closest("button");
+    const id = button?.dataset.id;
+    if (!button || !id) return;
+    if (
+      button.classList.contains("confirm-btn") ||
+      button.classList.contains("reject-btn")
+    ) {
+      const task = tasks.get(id);
+      if (!task) return;
+      const decision = button.classList.contains("confirm-btn")
+        ? "confirmed"
+        : "rejected";
+      button.disabled = true;
+      try {
+        const reviewed = await reviewActionItem(id, task, decision);
+        tasks.set(id, {
+          ...task,
+          title: reviewed.title,
+          assignee: reviewed.assignee,
+          assigneeEmail: reviewed.assignee_email,
+          startDate: reviewed.start_date,
+          deadline: reviewed.deadline,
+          reviewStatus: reviewed.review_status,
+          reviewedAt: reviewed.reviewed_at,
+        });
+        reminderStatus.textContent =
+          decision === "confirmed"
+            ? "Action confirmed. Reminder eligibility now uses the visible recipient and dates."
+            : "Action rejected. Reminders are disabled for it.";
+        renderTable();
+      } catch {
+        button.disabled = false;
+        reminderStatus.textContent =
+          "The review was not saved. The action remains in its previous review state.";
+      }
+      return;
+    }
+    if (button.classList.contains("reminder-btn")) {
+      if (button.disabled) return;
+      button.disabled = true;
+      reminderStatus.textContent = "Sending reminder…";
+      try {
+        const result = await requestManualReminder(id);
+        if (result.status === "sent") {
+          reminderStatus.textContent = "Reminder accepted by the email provider.";
+        } else if (result.status === "unknown") {
+          reminderStatus.textContent =
+            "The provider outcome is being reviewed. Please do not resend yet.";
+        } else {
+          reminderStatus.textContent =
+            "The reminder request was recorded and will be retried safely if eligible.";
+        }
+      } catch (error) {
+        if (error?.status === 429) {
+          reminderStatus.textContent = "Too many reminder requests. Please wait and try again.";
+        } else if (error?.status === 404 || error?.status === 409) {
+          reminderStatus.textContent =
+            "A reminder is not available for this action item.";
+        } else {
+          reminderStatus.textContent =
+            "The reminder could not be confirmed. Retrying will reuse the same request key.";
+        }
+      } finally {
+        const task = tasks.get(id);
+        button.disabled =
+          !task?.assigneeEmail ||
+          task?.status === "completed" ||
+          (task?.source === "ai_generated" && task?.reviewStatus !== "confirmed");
+      }
+      return;
+    }
     if (button.classList.contains("edit-btn")) {
       openModal("edit", id);
-    } else if (button.classList.contains("delete-btn")) {
-      if (confirm("Are you sure you want to delete this task?")) {
-        try {
-          const taskDocRef = doc(db, `users/${currentUser.uid}/actionLogs`, id);
-          await deleteDoc(taskDocRef);
-        } catch (error) {
-          console.error("Failed to delete task:", error);
-          alert("Could not delete task. Please try again.");
-        }
-      }
-    } else if (button.classList.contains("send-email-btn")) {
-      const task = tasks.find((t) => t.id === id);
-
-      if (task.status === "Completed") {
-        alert("Cannot send a reminder for the task that is already completed.");
-        return;
-      }
-
-      if (!task || !task.assigneeEmail) {
-        alert("Cannot send email: Assignee email is missing for this task.");
-        return;
-      }
-
-      const originalContent = button.innerHTML;
-      button.innerHTML = `
-                    <img src="/img/loading.gif" alt="Loading Spinner" width="40">`;
-      button.disabled = true;
-
-      try {
-        const response = await fetch(`${MY_API}/send-manual-reminder`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ task: task, userId: currentUser.uid }),
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.detail || "Failed to send email.");
-        }
-
-        alert("Reminder email sent successfully!");
-      } catch (error) {
-        console.error("Failed to send manual reminder:", error);
-        alert(`Error: ${error.message}`);
-      } finally {
-        button.innerHTML = originalContent;
-        button.disabled = false;
-      }
+      return;
+    }
+    if (!button.classList.contains("delete-btn")) return;
+    if (!window.confirm("Are you sure you want to delete this task?")) return;
+    button.disabled = true;
+    try {
+      await deleteActionItem(id);
+      tasks.delete(id);
+      updateFilterDropdowns();
+      renderTable();
+    } catch {
+      button.disabled = false;
+      window.alert("The action item could not be deleted. Reload and try again.");
     }
   });
 
-  const updateFilterDropdowns = () => {
-    let assignees = getAllAssignees();
+  elements.search.addEventListener("input", (event) => {
+    filters.search = event.target.value.trim();
+    renderTable();
+  });
 
-    if (tasks.some((t) => !t.assignee)) {
-      if (!assignees.includes("Unassigned")) {
-        assignees.push("Unassigned");
+  document.querySelectorAll(".filter-btn").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const dropdown = button.nextElementSibling;
+      document.querySelectorAll(".filter-dropdown").forEach((candidate) => {
+        if (candidate !== dropdown) candidate.style.display = "none";
+      });
+      dropdown.style.display =
+        dropdown.style.display === "block" ? "none" : "block";
+    });
+  });
+
+  document.querySelectorAll(".filter-dropdown").forEach((dropdown) => {
+    dropdown.addEventListener("click", (event) => {
+      event.preventDefault();
+      const target = event.target.closest("a");
+      if (!target) return;
+      const type = dropdown.previousElementSibling.dataset.filterType;
+      filters[type] = target.dataset.value;
+      const label = target.textContent;
+      dropdown.previousElementSibling.querySelector("p").textContent = label;
+      dropdown.style.display = "none";
+      renderTable();
+    });
+  });
+
+  elements.clearFilters.addEventListener("click", () => {
+    filters = { search: "", assignee: "All", status: "All" };
+    elements.search.value = "";
+    document
+      .getElementById("assignee-filter-btn")
+      .querySelector("p").textContent = "Assignee";
+    document
+      .getElementById("status-filter-btn")
+      .querySelector("p").textContent = "Status";
+    renderTable();
+  });
+
+  elements.create.addEventListener("click", () => openModal("create"));
+  elements.cancel.addEventListener("click", closeModal);
+  elements.modal.addEventListener("click", (event) => {
+    if (event.target === elements.modal) closeModal();
+  });
+  window.addEventListener("click", () => {
+    document
+      .querySelectorAll(".filter-dropdown")
+      .forEach((dropdown) => (dropdown.style.display = "none"));
+  });
+
+  await loadTasks({ showLoading: true });
+  try {
+    unsubscribe = await subscribeToActionItems(
+      () => {
+        window.clearTimeout(realtimeTimer);
+        realtimeTimer = window.setTimeout(() => void loadTasks(), 150);
+      },
+      (status) => {
+        if (status === "SUBSCRIBED") {
+          connection.textContent = "Live updates connected";
+          connection.className = "mt-2 text-xs text-emerald-700";
+        } else if (["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"].includes(status)) {
+          connection.textContent = "Live updates disconnected — reload to refresh action items";
+          connection.className = "mt-2 text-xs text-amber-700";
+        }
       }
-    }
-    if (assignees.length === 0) {
-      assignees = ["Unassigned"];
-    }
-
-    populateDropdown(
-      document.getElementById("assignee-dropdown"),
-      assignees.sort(),
-      "Assignee"
     );
+  } catch {
+    connection.textContent = "Live updates unavailable — reload to refresh action items";
+    connection.className = "mt-2 text-xs text-amber-700";
+  }
 
-    const statusesForFilter = allStatuses.filter(
-      (s) => s !== "Generated from Summary"
-    );
-    populateDropdown(
-      document.getElementById("status-dropdown"),
-      statusesForFilter,
-      "Status"
-    );
-  };
-
-  const initializePageListeners = () => {
-    searchInput.addEventListener("input", (e) => {
-      currentFilters.search = e.target.value;
-      applyFilters();
-    });
-
-    document.querySelectorAll(".filter-btn").forEach((button) => {
-      button.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const dropdown = button.nextElementSibling;
-
-        document.querySelectorAll(".filter-dropdown").forEach((d) => {
-          if (d !== dropdown) d.style.display = "none";
-        });
-        dropdown.style.display =
-          dropdown.style.display === "block" ? "none" : "block";
-      });
-    });
-
-    document.querySelectorAll(".filter-dropdown").forEach((dropdown) => {
-      dropdown.addEventListener("click", (e) => {
-        e.preventDefault();
-        const target = e.target.closest("a");
-        if (!target) return;
-        const filterType = dropdown.previousElementSibling.dataset.filterType;
-        const value = target.dataset.value;
-        currentFilters[filterType] = value;
-        const btnText =
-          value === "All"
-            ? filterType.charAt(0).toUpperCase() + filterType.slice(1)
-            : value;
-        dropdown.previousElementSibling.querySelector("p").textContent =
-          btnText;
-        applyFilters();
-        dropdown.style.display = "none";
-      });
-    });
-
-    clearFiltersBtn.addEventListener("click", () => {
-      currentFilters = { search: "", assignee: "All", status: "All" };
-      searchInput.value = "";
-      document
-        .getElementById("assignee-filter-btn")
-        .querySelector("p").textContent = "Assignee";
-      document
-        .getElementById("status-filter-btn")
-        .querySelector("p").textContent = "Status";
-      applyFilters();
-    });
-
-    createTaskBtn.addEventListener("click", () => openModal("create"));
-    cancelBtn.addEventListener("click", closeModal);
-    taskModal.addEventListener("click", (e) => {
-      if (e.target === taskModal) closeModal();
-    });
-
-    window.addEventListener("click", () => {
-      document
-        .querySelectorAll(".filter-dropdown")
-        .forEach((d) => (d.style.display = "none"));
-    });
-  };
-
-  initializePageListeners();
-  fetchAndRenderTasks();
-};
+  window.addEventListener(
+    "pagehide",
+    () => {
+      window.clearTimeout(realtimeTimer);
+      unsubscribe?.();
+      unsubscribe = null;
+    },
+    { once: true }
+  );
+}
 
 initializeApp(actionPage);
