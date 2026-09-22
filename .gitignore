@@ -1,4 +1,14 @@
+.env
+.env.*
+!.env.example
 backend/.env
 ohome.js
 orouters.py
 delete-user.py
+secrets.txt
+node_modules/
+.pytest_cache/
+__pycache__/
+*.py[cod]
+supabase/.branches/
+supabase/.temp/

@@ -1,0 +1,26 @@
+{
+  "name": "ally",
+  "version": "1.0.0",
+  "description": "OneVoice is a free smart multilingual system for translation and role-based summarization  - with the aim to bridge the language barrier gap between teams.",
+  "main": "index.js",
+  "scripts": {
+    "test": "npm run test:backend && npm run test:frontend",
+    "test:backend": "python -m pytest backend/tests -q -p no:cacheprovider",
+    "test:frontend": "node --experimental-vm-modules --test --test-isolation=none frontend/tests/*.test.cjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Alliance-International/ally.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Alliance-International/ally/issues"
+  },
+  "homepage": "https://github.com/Alliance-International/ally#readme",
+  "devDependencies": {
+    "supabase": "2.117.0"
+  }
+}

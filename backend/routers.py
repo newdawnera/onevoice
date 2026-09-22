@@ -1,376 +1,602 @@
+from __future__ import annotations
 
-
-import os
-import json
 import base64
-import asyncio, httpx
-from datetime import date, datetime, timedelta
-import logging
 import html
-from fastapi import APIRouter, Header, UploadFile, File, Form, HTTPException
-from fastapi.responses import JSONResponse, HTMLResponse
-from typing import List
+import json
+import logging
+import os
+import re
+import time
+from email_validator import EmailNotValidError, validate_email
+from pathlib import Path
+from typing import Annotated
+from urllib.parse import parse_qs, urlparse
+from uuid import UUID
+
+import bleach
+import httpx
 from bs4 import BeautifulSoup
-import utils
-from pyModels import ResultRequest, AiHelperRequest, ManualEmailRequest, WelcomeEmailRequest
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Request, UploadFile
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+
 import config
+import utils
+from auth import AuthenticatedUser, get_current_user
+from config import Settings, get_settings
+from qstash_auth import (
+    QStashRequestVerifier,
+    QStashVerificationRejected,
+    QStashVerificationUnavailable,
+    get_qstash_verifier,
+)
+from rate_limit import (
+    DOCUMENT_RATE_LIMIT,
+    EMAIL_RATE_LIMIT,
+    REMINDER_RATE_LIMIT,
+    TRANSCRIPTION_RATE_LIMIT,
+)
+from reminders import (
+    ReminderInfrastructureError,
+    ReminderService,
+    StatusPostRateLimiter,
+    get_reminder_service,
+    get_status_post_limiter,
+)
 
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+Authenticated = Annotated[AuthenticatedUser, Depends(get_current_user)]
+AppSettings = Annotated[Settings, Depends(get_settings)]
+ReminderWorkflow = Annotated[ReminderService, Depends(get_reminder_service)]
+QStashVerifier = Annotated[QStashRequestVerifier, Depends(get_qstash_verifier)]
+StatusLimiter = Annotated[StatusPostRateLimiter, Depends(get_status_post_limiter)]
+
+AUDIO_EXTENSIONS = {".mp3", ".wav", ".mp4", ".m4a", ".webm", ".ogg"}
+AUDIO_MIME_TYPES = {
+    "audio/mpeg",
+    "audio/mp3",
+    "audio/wav",
+    "audio/x-wav",
+    "audio/mp4",
+    "audio/x-m4a",
+    "audio/webm",
+    "audio/ogg",
+    "video/mp4",
+    "video/webm",
+}
+DOCUMENT_MIME_TYPES = {
+    ".pdf": {"application/pdf"},
+    ".docx": {
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    },
+    ".txt": {"text/plain"},
+}
+EMAIL_ALLOWED_TAGS = {
+    "a",
+    "blockquote",
+    "br",
+    "code",
+    "em",
+    "h1",
+    "h2",
+    "h3",
+    "li",
+    "ol",
+    "p",
+    "pre",
+    "s",
+    "span",
+    "strong",
+    "u",
+    "ul",
+}
+EMAIL_ALLOWED_ATTRIBUTES = {"a": ["href", "title"]}
+MAX_EMAIL_ATTACHMENTS = 5
+STATUS_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{43,128}$")
+MAX_STATUS_POST_BYTES = 2048
+
+
+def _megabytes(value: int) -> int:
+    return value * 1024 * 1024
+
+
+def _safe_filename(upload: UploadFile) -> tuple[str, str]:
+    raw = (upload.filename or "").strip()
+    if not raw or "\x00" in raw or len(raw) > 255:
+        raise HTTPException(status_code=400, detail="The uploaded filename is invalid.")
+    normalized = raw.replace("\\", "/")
+    filename = normalized.rsplit("/", 1)[-1]
+    if filename in {"", ".", ".."}:
+        raise HTTPException(status_code=400, detail="The uploaded filename is invalid.")
+    return filename, Path(filename).suffix.lower()
+
+
+def _upload_size(upload: UploadFile) -> int:
+    stream = upload.file
+    current = stream.tell()
+    stream.seek(0, os.SEEK_END)
+    size = stream.tell()
+    stream.seek(0 if current != 0 else current)
+    return size
+
+
+def _validate_upload(
+    upload: UploadFile,
+    *,
+    max_bytes: int,
+    allowed_extensions: set[str],
+    allowed_mime_types: set[str],
+) -> str:
+    filename, extension = _safe_filename(upload)
+    content_type = (upload.content_type or "").split(";", 1)[0].strip().lower()
+    if extension not in allowed_extensions or content_type not in allowed_mime_types:
+        raise HTTPException(status_code=415, detail="The uploaded file type is not supported.")
+    size = _upload_size(upload)
+    if size <= 0:
+        raise HTTPException(status_code=400, detail="The uploaded file is empty.")
+    if size > max_bytes:
+        raise HTTPException(status_code=413, detail="The uploaded file is too large.")
+    return filename
+
+
+def _validate_document(upload: UploadFile, max_bytes: int) -> str:
+    filename, extension = _safe_filename(upload)
+    content_type = (upload.content_type or "").split(";", 1)[0].strip().lower()
+    allowed_mimes = DOCUMENT_MIME_TYPES.get(extension)
+    if not allowed_mimes or content_type not in allowed_mimes:
+        raise HTTPException(status_code=415, detail="The uploaded file type is not supported.")
+    size = _upload_size(upload)
+    if size <= 0:
+        raise HTTPException(status_code=400, detail="The uploaded file is empty.")
+    if size > max_bytes:
+        raise HTTPException(status_code=413, detail="The uploaded file is too large.")
+    return filename
 
 
 @router.post("/transcribe/", summary="Transcribe Audio/Video File")
 async def transcribe_endpoint(
-    file: UploadFile = File(None),
-    language:str=Form("auto")):
-    if not file:
-        raise HTTPException(status_code=400, detail="No audio file provided.")
-
-    # This assemby ai function will handles everything, including speaker separation.
-    transcription = await utils.transcribe_with_assemblyai(file, language)
-    
+    current_user: Authenticated,
+    settings: AppSettings,
+    _rate_limit: Annotated[None, Depends(TRANSCRIPTION_RATE_LIMIT)],
+    file: UploadFile = File(...),
+    language: str = Form("auto"),
+):
+    del current_user, _rate_limit
+    _validate_upload(
+        file,
+        max_bytes=_megabytes(settings.max_audio_upload_mb),
+        allowed_extensions=AUDIO_EXTENSIONS,
+        allowed_mime_types=AUDIO_MIME_TYPES,
+    )
+    try:
+        transcription = await utils.transcribe_with_assemblyai(file, language)
+    except Exception as exc:
+        logger.warning("Transcription provider failed.")
+        raise HTTPException(status_code=502, detail="Transcription failed.") from exc
     return {"transcription": transcription}
 
 
-
 @router.post("/upload-document/", summary="Upload and Process a Document")
-async def upload_document_endpoint(file: UploadFile = File(...)):
-    logger.info(f"Processing document '{file.filename}'")
-    text_content = await utils.read_text_from_file(file)
+async def upload_document_endpoint(
+    current_user: Authenticated,
+    settings: AppSettings,
+    _rate_limit: Annotated[None, Depends(DOCUMENT_RATE_LIMIT)],
+    file: UploadFile = File(...),
+):
+    del current_user, _rate_limit
+    _validate_document(file, _megabytes(settings.max_document_upload_mb))
+    try:
+        text_content = await utils.read_text_from_file(file)
+    except Exception as exc:
+        logger.warning("Document processing failed.")
+        raise HTTPException(status_code=500, detail="Document processing failed.") from exc
     return {"text": text_content}
 
-@router.post("/generate-result/", summary="Generate Combined Result")
-async def generate_result_endpoint(request: ResultRequest):        
 
-    summary_prompt = f"""
-    You are an expert AI assistant specializing in creating comprehensive and structured summaries of documents. Your task is to generate a high-quality, general overview summary of the provided document.
+def _parse_recipients(raw: str, settings: Settings) -> list[dict[str, str]]:
+    if len(raw) > settings.max_email_recipients * 321:
+        raise HTTPException(status_code=400, detail="The recipient list is invalid.")
+    entries = [entry.strip() for entry in raw.split(",") if entry.strip()]
+    if not entries or len(entries) > settings.max_email_recipients:
+        raise HTTPException(status_code=400, detail="The recipient list is invalid.")
 
-    This summary must be a neutral, objective, and detailed representation of the content, suitable for any reader regardless of their role. Do not tailor it for any specific perspective; simply extract and organize the key facts.
-
-    If the document is a meeting transcript:
-    Generate a well-organized meeting summary using the standard headings below.
-    - Capture all relevant information for each heading.
-    - Omit any heading for which no information exists in the text.
-    - Do not fabricate or assume any missing details.
-
-    Standard Headings for Meetings:
-    1.  Meeting Details: Record the date, time, and platform if provided.
-    2.  Attendees: List all participants, including their roles if mentioned. Note any absentees.
-    3.  Agenda: List the main topics of discussion as stated or inferred from the text.
-    4.  Discussion Summary / Key Points: Detail the main arguments, updates, and points discussed for each agenda item.
-    5.  Decisions Made: List all key decisions, the rationale behind them, and their expected impact.
-    6.  Action Items: List all assigned tasks. For each task, include the owner, the exact task, and the deadline, if specified.
-    7.  Next Steps: Document any unresolved issues, follow-up conversations, or future plans.
-    8.  Next Meeting: Note the date and time if a follow-up meeting was scheduled.
-
-    If the document is NOT a meeting transcript (e.g., a report, school document, informal conversation, email, or project brief):
-    Generate a structured summary using logical headings that fit the content.
-    - Common headings can include: "Executive Summary," "Key Findings," "Main Arguments," "Proposed Solutions," "Data Analysis," "Identified Risks," "Recommendations," "or/and any other headings you deem fit."
-    - The goal is to create a clear, easily digestible overview of the document's core message and supporting details.
-
-    Universal Rules:
-    - Stick to the Source: Extract information ONLY from the provided text. Do not infer, assume, or add any outside information.
-    - Maintain Neutrality: Use a neutral, professional tone. Do not inject opinion or emotion.
-    - Accuracy is Paramount: Ensure the final summary is a faithful and accurate representation of the key information in the source document.
-    - If it's a school material, properly summarize in an academic way such that the student does not miss out on key points.
-    - Plain Text Only: Do not use any markdown formatting (like **, ``, or #).
-
-
-
-    Text to summarize:
-    ---
-    {request.text}
-    ---
-    """ 
-    email_subject_prompt = f"Based on the following text, generate a very concise and relevant email subject line, no more than 8-10 words. Output ONLY the subject line itself, with no extra text or quotation marks.\n\nText:\n---\n{request.text}"
-
-    general_summary = await utils.generate_gemini_content(summary_prompt)
-    refined_summary = await utils.role_summary(general_summary, request.role)
-    summary = await utils.correct_summary_language(request.text, refined_summary)
-    email_subject_raw = await utils.generate_gemini_content(email_subject_prompt)
-    email_subject = email_subject_raw.strip().replace('"', '')
-
-    final_summary = summary
-    if request.target_language and request.target_language != "No Translation":
-    
-        translation_prompt = f"Translate the following text into {request.target_language}. Provide only the translated text, without any additional titles or explanations.\n\nText:\n---\n{summary}"
-        final_summary = await utils.generate_gemini_content(translation_prompt)
-    else:
-    
-        final_summary = summary
-
-    final_summary_html = html.escape(final_summary).replace('\n', '<br>')
-
-    lines = final_summary_html.split('<br>')
-    processed_lines = []
-    for line in lines:
-        stripped_line = line.strip()
-       
-        if (stripped_line.endswith(':') and len(stripped_line) < 100) or (stripped_line.isupper() and len(stripped_line) > 1):
-             processed_lines.append(f"<h3>{stripped_line}</h3>")
-        elif stripped_line:
-            processed_lines.append(f"<p>{stripped_line}</p>")
-
-    formatted_result = "".join(processed_lines)
-
-    
-    return {"formatted_result": formatted_result, "email_subject": email_subject, "plain_text_summary": final_summary}
-
-@router.post("/ai-helper", summary="Generic AI Helper")
-async def ai_helper_endpoint(request: AiHelperRequest):
-    prompt = "" 
-    
-    if request.task_type == "autocomplete":
-        prompt = f"""You are an intelligent auto-completion AI. Continue the following text in a natural and helpful way.
-        Provide only the continuation, without repeating the original text. The continuation should be a few words or a short phrase.
-
-        TEXT: "{request.context.get('text')}"
-
-        CONTINUATION:"""
-
-    elif request.task_type == "q_and_a":
-        prompt = f"""You are a helpful assistant answering questions about a document.
-        Use ONLY the information from the provided document to answer the user's question.
-        If the answer is not in the document, say so. Keep your answers concise.
-
-        Document:
-        {request.context.get('context')}
-
-        Question:
-        {request.context.get('question')}
-
-        Answer:"""
-
-    elif request.task_type == "detect_topics":
-        prompt = f"""You are an expert at structuring documents. Analyze the following transcript and identify logical sections.
-        For each section, provide a concise heading and the character index where it begins.
-        The output must be a valid JSON array of objects, each with "topic" and "index" keys.
-        Ensure the index is at the start of a paragraph. Recheck for 99% accuracy.
-
-        {request.context.get('text')}"""
-
-    elif request.task_type == "extract_actions":
-        
-        current_year = datetime.now().year
-
-        prompt = f"""From the following meeting summary, extract all action items.
-        Your response MUST be a valid JSON array of objects.
-        Each object should have 'task', 'assignee', 'assigneeEmail', 'startDate', and 'deadline' keys.
-        Crucially, any date found for 'startDate' and 'deadline' MUST be formatted as 'yyyy-mm-dd'.
-
-        IMPORTANT DATE RULE: If a year is not explicitly mentioned for a date in the text, you MUST assume the year is {current_year}. Do not use any other year. For example, if the text says 'the deadline is March 5th', you must format it as '{current_year}-03-05'.
-
-        If a value for a key is not mentioned, set it to null.
-        If no person is assigned, set assignee to 'Unassigned' and assigneeEmail to null.
-        The language of the action items should be the same as the language of the summary.
-        If no action items are found, return an empty array.
-        Do not fabricate or assume details. Recheck for 99% accuracy.
-
-        Summary:
-        ---
-        {request.context.get('summary')}
-        ---"""
-    else:
-        raise HTTPException(status_code=400, detail="Invalid task_type specified.")
-    
-    response_text = await utils.generate_gemini_content(prompt, is_json=request.is_json)
-    if request.is_json:
-        cleaned_json_string = response_text.strip().replace("```json", "").replace("```", "")
+    recipients = []
+    for entry in entries:
+        if "\r" in entry or "\n" in entry or len(entry) > 320:
+            raise HTTPException(status_code=400, detail="The recipient list is invalid.")
         try:
-            return json.loads(cleaned_json_string)
-        except json.JSONDecodeError:
-            raise HTTPException(status_code=500, detail="AI returned invalid JSON.")
-    else:
-        return {"text": response_text}
+            normalized = validate_email(
+                entry, check_deliverability=False
+            ).normalized
+        except EmailNotValidError as exc:
+            raise HTTPException(
+                status_code=400, detail="The recipient list is invalid."
+            ) from exc
+        recipients.append({"email": normalized})
+    return recipients
+
 
 @router.post("/send-email/", summary="Send Email via Brevo with Attachments")
 async def send_email_endpoint(
-    recipients: str = Form(...), subject: str = Form(...), html_body: str = Form(...), attachments: List[UploadFile] = File(...)
+    current_user: Authenticated,
+    settings: AppSettings,
+    _rate_limit: Annotated[None, Depends(EMAIL_RATE_LIMIT)],
+    recipients: str = Form(...),
+    subject: str = Form(...),
+    html_body: str = Form(...),
+    attachments: list[UploadFile] = File(default=[]),
 ):
-    brevo_api_key = os.getenv("BREVO_API_KEY")
-    sender_email = os.getenv("SENDER_EMAIL")
-    sender_name = os.getenv("SENDER_NAME", "Ally, your AI Meeting Wizard")
-    project_name = "Ally"
+    del current_user, _rate_limit
+    subject = subject.strip()
+    if (
+        not subject
+        or len(subject) > settings.max_email_subject_chars
+        or "\r" in subject
+        or "\n" in subject
+    ):
+        raise HTTPException(status_code=400, detail="The email subject is invalid.")
+    if not html_body or len(html_body) > settings.max_email_html_chars:
+        raise HTTPException(status_code=413, detail="The email body is too large.")
 
-    logger.info(f"Attempting to send email via Brevo from sender: '{sender_email}' to recipients: '{recipients}'")
+    to_list = _parse_recipients(recipients, settings)
+    named_attachments = [item for item in attachments if item.filename]
+    if len(named_attachments) > MAX_EMAIL_ATTACHMENTS:
+        raise HTTPException(status_code=400, detail="Too many attachments.")
 
-    if not brevo_api_key or not sender_email:
-        raise HTTPException(
-            status_code=500,
-            detail="Email service is not configured on the server. Missing BREVO_API_KEY or SENDER_EMAIL in .env file."
+    encoded_attachments = []
+    total_size = 0
+    for attachment in named_attachments:
+        filename, _extension = _safe_filename(attachment)
+        size = _upload_size(attachment)
+        if size <= 0:
+            raise HTTPException(status_code=400, detail="An attachment is empty.")
+        if size > _megabytes(settings.max_email_attachment_mb):
+            raise HTTPException(status_code=413, detail="An attachment is too large.")
+        total_size += size
+        if total_size > _megabytes(settings.max_email_total_attachment_mb):
+            raise HTTPException(
+                status_code=413, detail="The combined attachments are too large."
+            )
+        await attachment.seek(0)
+        encoded_attachments.append(
+            {
+                "name": filename,
+                "content": base64.b64encode(await attachment.read()).decode("ascii"),
+            }
         )
 
-    soup = BeautifulSoup(html_body, 'html.parser')
-    all_attachments = []
-    for attachment in attachments:
-        if attachment.filename:
-            encoded_content = base64.b64encode(await attachment.read()).decode()
-            all_attachments.append({"name": attachment.filename, "content": encoded_content})
+    sanitized_body = bleach.clean(
+        html_body,
+        tags=EMAIL_ALLOWED_TAGS,
+        attributes=EMAIL_ALLOWED_ATTRIBUTES,
+        protocols={"https", "mailto"},
+        strip=True,
+        strip_comments=True,
+    )
+    if not BeautifulSoup(sanitized_body, "html.parser").get_text(strip=True):
+        raise HTTPException(status_code=400, detail="The email body is empty.")
+
+    brevo_api_key = os.getenv("BREVO_API_KEY", "").strip()
+    sender_email = os.getenv("SENDER_EMAIL", "").strip()
+    sender_name = os.getenv("SENDER_NAME", "Ally, your AI Meeting Wizard").strip()
+    if not brevo_api_key or not sender_email:
+        raise HTTPException(status_code=503, detail="Email service is unavailable.")
 
     if config.email_template:
-        app_url = "https://ally-frontend-vw00.onrender.com"
-        final_html_content = config.email_template.replace("[EMAIL_SUBJECT]", html.escape(subject))
-
-        preheader_text = ' '.join(soup.get_text().split())
-        final_html_content = final_html_content.replace("[PREHEADER_TEXT]", html.escape(preheader_text[:150]))
-        final_html_content = final_html_content.replace("[PROJECT_NAME]", project_name)
-        final_html_content = final_html_content.replace("[MAIN_CONTENT_HTML]", str(soup))
-        final_html_content = final_html_content.replace("[MY_URL]", app_url)
-        final_html_content = final_html_content.replace("[CURRENT_YEAR]", str(datetime.now().year))
+        text_preview = " ".join(
+            BeautifulSoup(sanitized_body, "html.parser").get_text(" ").split()
+        )
+        final_html = config.email_template.replace(
+            "[EMAIL_SUBJECT]", html.escape(subject)
+        )
+        final_html = final_html.replace(
+            "[PREHEADER_TEXT]", html.escape(text_preview[:150])
+        )
+        final_html = final_html.replace("[PROJECT_NAME]", "Ally")
+        final_html = final_html.replace("[MAIN_CONTENT_HTML]", sanitized_body)
+        final_html = final_html.replace(
+            "[MY_URL]", "https://ally-vimd.onrender.com"
+        )
     else:
-        final_html_content = str(soup)
-
-    headers = {
-        "api-key": brevo_api_key,
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-    }
-
-    to_list = [{"email": e.strip()} for e in recipients.split(',') if e.strip()]
-    if not to_list:
-        raise HTTPException(status_code=400, detail="No valid recipient emails provided.")
+        final_html = sanitized_body
 
     payload = {
         "sender": {"name": sender_name, "email": sender_email},
         "to": to_list,
         "subject": subject,
-        "htmlContent": final_html_content
+        "htmlContent": final_html,
     }
+    if encoded_attachments:
+        payload["attachment"] = encoded_attachments
 
-    if all_attachments:
-        payload["attachment"] = all_attachments
-        logger.info(f"Attaching {len(all_attachments)} total file(s) to the email.")
-
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.post("https://api.brevo.com/v3/smtp/email", json=payload, headers=headers, timeout=30.0)
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                "https://api.brevo.com/v3/smtp/email",
+                json=payload,
+                headers={
+                    "api-key": brevo_api_key,
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                },
+            )
             response.raise_for_status()
-            logger.info("Email sent successfully via Brevo.")
-            return JSONResponse(content={"message": "Email sent successfully!"}, status_code=200)
-        except httpx.HTTPStatusError as e:
-            error_details = e.response.text
-            logger.error(f"Brevo API Error: {error_details}")
-           
-            try:
-                error_json = json.loads(error_details)
-                detail_message = error_json.get("message", error_details)
-            except json.JSONDecodeError:
-                detail_message = error_details
-            raise HTTPException(
-                status_code=e.response.status_code,
-                detail=f"Failed to send email. API Error: {detail_message}"
-            )
-        except Exception as e:
-            logger.error(f"An unexpected error occurred while sending email: {e}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"An unexpected error occurred: {str(e)}"
-            )
+    except httpx.HTTPError as exc:
+        logger.warning("Brevo email request failed.")
+        raise HTTPException(status_code=502, detail="Email delivery failed.") from exc
+    return JSONResponse(content={"message": "Email sent successfully."})
 
 
-@router.post("/send-welcome-email", summary="Send a Welcome Email to a New User")
-async def send_welcome_email_endpoint(request: WelcomeEmailRequest):
-    await utils.send_welcome_email(request.email, request.username)
-    return {"message": "Welcome email sent successfully."}
+@router.post("/send-welcome-email", summary="Deprecated welcome-email route")
+async def send_welcome_email_endpoint(current_user: Authenticated):
+    del current_user
+    raise HTTPException(
+        status_code=410,
+        detail="Welcome emails are disabled until the verified-email flow is complete.",
+    )
 
-@router.get("/send-task-reminders", summary="Scheduled Task Reminder Trigger")
-async def task_reminder_scheduler(authorization: str = Header(None)):
 
-    # this is to verify the secret token from Upstash
-    expected_token = f"Bearer {os.getenv('QSTASH_TOKEN')}"
-    if authorization != expected_token:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+@router.post("/internal/reminders/run", summary="Signed internal reminder worker")
+async def task_reminder_scheduler(
+    request: Request,
+    verifier: QStashVerifier,
+    workflow: ReminderWorkflow,
+):
+    if request.headers.get("origin") is not None:
+        raise HTTPException(status_code=403, detail="Request not allowed.")
+    signatures = request.headers.getlist("upstash-signature")
+    if len(signatures) != 1:
+        raise HTTPException(status_code=401, detail="Unauthorized.")
+    raw_body = await request.body()
+    try:
+        verifier.verify(raw_body=raw_body, signature=signatures[0])
+    except QStashVerificationUnavailable as exc:
+        raise HTTPException(
+            status_code=503, detail="Reminder worker is unavailable."
+        ) from exc
+    except QStashVerificationRejected as exc:
+        raise HTTPException(status_code=401, detail="Unauthorized.") from exc
 
-    if not config.db:
-        raise HTTPException(status_code=500, detail="Firestore is not initialized.")
-    logger.info("Running daily task reminder check...")
-    today = date.today()
-    tomorrow = today + timedelta(days=1)
-    
-    tasks_ref = config.db.collection_group('actionLogs').where('status', '!=', 'Completed')
-    tasks_stream = tasks_ref.stream()
+    try:
+        payload = json.loads(raw_body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid worker request.") from exc
+    if not isinstance(payload, dict) or set(payload) - {"version"}:
+        raise HTTPException(status_code=400, detail="Invalid worker request.")
+    if payload.get("version", 1) != 1:
+        raise HTTPException(status_code=400, detail="Invalid worker request.")
 
-    sent_reminders = 0
-    for task in tasks_stream:
-        task_data = task.to_dict()
-        task_id = task.id
-        user_id = task.reference.parent.parent.id
-        reminder_type = None
-        
-        try:
-            deadline_str = task_data.get('deadline')
-            start_date_str = task_data.get('startDate')
-            
-            if start_date_str:
-                start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
-                if start_date == today:
-                    reminder_type = "start_date"
+    try:
+        counts = await workflow.run_scheduled()
+    except ReminderInfrastructureError as exc:
+        raise HTTPException(
+            status_code=503, detail="Reminder processing is temporarily unavailable."
+        ) from exc
+    return {"status": "processed", **counts}
 
-            if not reminder_type and deadline_str:
-                deadline_date = datetime.strptime(deadline_str, '%Y-%m-%d').date()
-                if deadline_date == tomorrow:
-                    reminder_type = "before_deadline"
-                elif deadline_date == today:
-                    reminder_type = "deadline"
 
-            if reminder_type and task_data.get("assigneeEmail"):
+@router.get("/send-task-reminders", summary="Removed legacy reminder scheduler")
+async def legacy_task_reminder_scheduler():
+    raise HTTPException(status_code=410, detail="This scheduler route was removed.")
 
-                if reminder_type == "start_date" and not start_date_str:
-                    logger.warning(f"Skipping start_date reminder for task {task_id}: Date is missing.")
-                    continue 
 
-                if reminder_type in ["deadline", "before_deadline"] and not deadline_str:
-                    logger.warning(f"Skipping deadline reminder for task {task_id}: Date is missing.")
-                    continue
+@router.api_route(
+    "/update-task-status",
+    methods=["GET", "POST"],
+    summary="Disabled legacy task-status mutation",
+)
+async def update_task_status_disabled():
+    raise HTTPException(
+        status_code=410,
+        detail="This legacy status-update link has been disabled.",
+    )
 
-                logger.info(f"Sending {reminder_type} reminder for task {task_id} to {task_data['assigneeEmail']}")
-                await utils.send_reminder_email(task_data, user_id, task_id, reminder_type)
-                sent_reminders += 1
 
-        except (ValueError, TypeError) as e:
-            logger.error(f"Could not parse date for task {task_id}. Error: {e}. Skipping.")
-            continue
-            
-    logger.info(f"Task reminder check complete. Sent {sent_reminders} reminders.")
-    return {"message": "Task reminder check complete."}
-
-@router.get("/update-task-status", summary="Update Task Status from Email", response_class=HTMLResponse)
-async def update_task_status_from_email(userId: str, taskId: str, newStatus: str):
-    if not config.db:
-        raise HTTPException(status_code=500, detail="Firestore is not initialized.")
-    if not all([userId, taskId, newStatus]):
-        return HTMLResponse(content="<h1>Error</h1><p>Missing required parameters.</p>", status_code=400)
-    task_ref = config.db.collection('users').document(userId).collection('actionLogs').document(taskId)
-    task_ref.update({'status': newStatus})
-    logger.info(f"Updated task {taskId} for user {userId} to status '{newStatus}'")
-    return HTMLResponse(content=config.success_template)
-
-@router.post("/send-manual-reminder", summary="Send a Manual Task Reminder Email")
-async def send_manual_reminder_endpoint(request: ManualEmailRequest):
-
-    if not request.task.get("deadline"):
+@router.post(
+    "/action-items/{action_item_id}/reminders",
+    summary="Request a server-owned action reminder",
+)
+async def send_manual_reminder_endpoint(
+    request: Request,
+    action_item_id: UUID,
+    current_user: Authenticated,
+    workflow: ReminderWorkflow,
+    _rate_limit: Annotated[None, Depends(REMINDER_RATE_LIMIT)],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+):
+    del _rate_limit
+    body = await request.body()
+    if body.strip():
         raise HTTPException(
             status_code=400,
-            detail="Cannot send a reminder because the task does not have a deadline."
+            detail="Reminder requests must not contain action or recipient data.",
         )
-    elif not request.task.get("startDate"):
+    try:
+        parsed_key = UUID(idempotency_key or "")
+    except (ValueError, TypeError, AttributeError) as exc:
         raise HTTPException(
-            status_code=400,
-            detail="Cannot send a reminder because the task does not have a start date."
+            status_code=400, detail="A valid Idempotency-Key UUID is required."
+        ) from exc
+
+    try:
+        result = await workflow.request_manual(
+            user_id=current_user.id,
+            action_item_id=action_item_id,
+            idempotency_key=parsed_key,
+        )
+    except ReminderInfrastructureError as exc:
+        raise HTTPException(
+            status_code=503, detail="Reminder processing is temporarily unavailable."
+        ) from exc
+
+    if result["outcome"] == "not_found":
+        raise HTTPException(status_code=404, detail="Action item not found.")
+    if result["outcome"] == "incompatible":
+        raise HTTPException(
+            status_code=409,
+            detail="This Idempotency-Key was already used for another request.",
+        )
+    if result["outcome"] == "ineligible":
+        raise HTTPException(
+            status_code=409, detail="A reminder cannot be sent for this action item."
         )
 
-    await utils.send_reminder_email(request.task, request.userId, request.task.get("id"), "manual_notification")
-    return {"message": "Manual reminder email sent."}
-
-@router.get("/firebase-config", summary="Get Firebase Client Configuration")
-async def get_firebase_config():
-    firebase_config = {
-        "apiKey": os.getenv("FIREBASE_API_KEY"), "authDomain": os.getenv("FIREBASE_AUTH_DOMAIN"),
-        "projectId": os.getenv("FIREBASE_PROJECT_ID"), "storageBucket": os.getenv("FIREBASE_STORAGE_BUCKET"),
-        "messagingSenderId": os.getenv("FIREBASE_MESSAGING_SENDER_ID"), "appId": os.getenv("FIREBASE_APP_ID")
+    public_result = {
+        "delivery_id": result.get("delivery_id"),
+        "status": result.get("status"),
+        "attempt_count": result.get("attempt_count"),
+        "next_attempt_at": result.get("next_attempt_at"),
     }
-    if not all(firebase_config.values()):
-        raise HTTPException(status_code=500, detail="Firebase client configuration is not properly set up on the server.")
-    return firebase_config
+    status_code = 200 if result.get("status") == "sent" else 202
+    return JSONResponse(status_code=status_code, content=public_result)
+
+
+@router.post("/send-manual-reminder", summary="Removed legacy manual reminder")
+async def legacy_manual_reminder_endpoint(current_user: Authenticated):
+    del current_user
+    raise HTTPException(status_code=410, detail="This reminder route was removed.")
+
+
+def _status_headers(response: HTMLResponse) -> HTMLResponse:
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; "
+        "base-uri 'none'; frame-ancestors 'none'"
+    )
+    return response
+
+
+def _status_page(title: str, message: str, form: str = "") -> HTMLResponse:
+    document = f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{html.escape(title)}</title><style>
+body{{font-family:system-ui,sans-serif;background:#f8fafc;color:#172033;margin:0;display:grid;min-height:100vh;place-items:center}}
+main{{background:#fff;border:1px solid #dbe3ec;border-radius:12px;max-width:32rem;padding:2rem;margin:1rem;box-shadow:0 8px 24px rgba(15,23,42,.08)}}
+button{{background:#2563eb;border:0;border-radius:8px;color:#fff;font-weight:700;padding:.75rem 1rem;cursor:pointer}}
+</style></head><body><main><h1>{html.escape(title)}</h1><p>{html.escape(message)}</p>{form}</main></body></html>"""
+    return _status_headers(HTMLResponse(document))
+
+
+def _valid_status_token(value: str) -> bool:
+    return bool(STATUS_TOKEN_PATTERN.fullmatch(value))
+
+
+@router.get("/action-status", response_class=HTMLResponse, summary="Confirm an action status")
+async def confirm_action_status(workflow: ReminderWorkflow, token: str = ""):
+    if not _valid_status_token(token):
+        return _status_page(
+            "Link unavailable",
+            "This status link is invalid, expired, revoked, or already used.",
+        )
+    try:
+        inspected = await workflow.inspect_status_token(token)
+    except ReminderInfrastructureError:
+        response = _status_page(
+            "Temporarily unavailable", "Please try this link again later."
+        )
+        response.status_code = 503
+        return response
+    if not inspected.get("valid"):
+        return _status_page(
+            "Link unavailable",
+            "This status link is invalid, expired, revoked, or already used.",
+        )
+    target = inspected.get("target_status")
+    label = "Completed" if target == "completed" else "In Progress"
+    form = (
+        '<form action="/action-status" method="post">'
+        f'<input type="hidden" name="token" value="{html.escape(token, quote=True)}">'
+        f'<button type="submit">Confirm {html.escape(label)}</button></form>'
+    )
+    return _status_page(
+        "Confirm status change",
+        f"Confirm that this action should be marked {label}.",
+        form,
+    )
+
+
+def _same_origin(value: str, expected_origin: str) -> bool:
+    try:
+        parsed = urlparse(value)
+        actual = f"{parsed.scheme}://{parsed.netloc}"
+    except ValueError:
+        return False
+    return actual == expected_origin
+
+
+@router.post("/action-status", summary="Consume an action-status token")
+async def consume_action_status(
+    request: Request,
+    settings: AppSettings,
+    workflow: ReminderWorkflow,
+    limiter: StatusLimiter,
+):
+    client_identity = request.client.host if request.client else "unknown"
+    if not await limiter.allow(client_identity, time.monotonic()):
+        raise HTTPException(status_code=429, detail="Too many requests.")
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > MAX_STATUS_POST_BYTES:
+                raise HTTPException(status_code=413, detail="Request too large.")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Invalid request.") from exc
+
+    expected = urlparse(settings.api_public_url)
+    expected_origin = f"{expected.scheme}://{expected.netloc}" if expected.netloc else ""
+    if request.headers.get("sec-fetch-site") == "cross-site":
+        raise HTTPException(status_code=403, detail="Request not allowed.")
+    origin = request.headers.get("origin")
+    referer = request.headers.get("referer")
+    if expected_origin and origin and not _same_origin(origin, expected_origin):
+        raise HTTPException(status_code=403, detail="Request not allowed.")
+    if expected_origin and referer and not _same_origin(referer, expected_origin):
+        raise HTTPException(status_code=403, detail="Request not allowed.")
+
+    raw_body = await request.body()
+    if len(raw_body) > MAX_STATUS_POST_BYTES:
+        raise HTTPException(status_code=413, detail="Request too large.")
+    media_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    try:
+        if media_type == "application/x-www-form-urlencoded":
+            values = parse_qs(raw_body.decode("utf-8"), keep_blank_values=True)
+            if set(values) != {"token"} or len(values["token"]) != 1:
+                raise ValueError
+            token = values["token"][0]
+        elif media_type == "application/json":
+            payload = json.loads(raw_body.decode("utf-8"))
+            if not isinstance(payload, dict) or set(payload) != {"token"}:
+                raise ValueError
+            token = payload["token"]
+        else:
+            raise HTTPException(status_code=415, detail="Unsupported content type.")
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid request.") from exc
+    if not isinstance(token, str) or not _valid_status_token(token):
+        return RedirectResponse("/action-status/result?outcome=unavailable", status_code=303)
+    try:
+        result = await workflow.consume_status_token(token)
+    except ReminderInfrastructureError as exc:
+        raise HTTPException(
+            status_code=503, detail="Status updates are temporarily unavailable."
+        ) from exc
+    outcome = "updated" if result.get("updated") else "unavailable"
+    return RedirectResponse(f"/action-status/result?outcome={outcome}", status_code=303)
+
+
+@router.get("/action-status/result", response_class=HTMLResponse, summary="Action-status result")
+async def action_status_result(outcome: str = "unavailable"):
+    if outcome == "updated":
+        return _status_page(
+            "Status updated", "The action status was updated successfully."
+        )
+    return _status_page(
+        "Link unavailable",
+        "This status link is invalid, expired, revoked, or already used.",
+    )
